@@ -1,10 +1,16 @@
-import {useMemo,useState} from 'react';
+import {useEffect,useMemo,useState} from 'react';
 import {Link,useLocation} from 'react-router-dom';
 import Icon from '../components/Icon';
 import SmartTable from '../components/SmartTable';
 import DashboardLayout from '../components/DashboardLayout';import Storefront from '../components/Storefront';import NotificationPanel from '../components/NotificationPanel';
-import {products,categories,vendors} from '../data';
-import {getOrders,updateOrder,getCommissionRate,calculateCommission,store} from '../services/mvecStore';
+import {vendors,categories} from '../data';
+import {productsApi} from '../API/products';
+import {categoriesApi} from '../API/categories';
+import {wholesaleApi} from '../API/wholesale';
+import {disputesApi} from '../API/disputes';
+import {adminApi} from '../API/admin';
+import {mapBackendProduct} from '../services/catalogApi';
+import {extractErrorMessage} from '../API/client';
 
 const money=n=>new Intl.NumberFormat('en-RW').format(Number(n)||0)+' RWF';
 const dateDMY=d=>new Date(d).toLocaleDateString('en-GB');
@@ -54,6 +60,49 @@ const moduleConfig={
  }
 };
 
+function VendorCategories(){
+ const [rows,setRows]=useState([]);const [loading,setLoading]=useState(true);const [error,setError]=useState('');
+ useEffect(()=>{categoriesApi.getAll().then(res=>setRows(res.categories||[])).catch(err=>setError(extractErrorMessage(err))).finally(()=>setLoading(false));},[]);
+ return <><Header eyebrow="VENDOR · CATEGORIES" title="Category management" desc="Marketplace-wide categories your products can belong to."/>
+  {error&&<div className="form-error">{error}</div>}
+  <div className="data-card">{loading&&<div className="empty-state"><h3>Loading…</h3></div>}
+   {!loading&&<SmartTable columns={[{key:'name',label:'Category'},{key:'products',label:'Products',render:r=>r._count?.products??0},{key:'status',label:'Status',render:r=><em className={'status '+(r.active?'active':'warning')}>{r.active?'Active':'Inactive'}</em>}]} rows={rows} rowKey={r=>r.id} searchPlaceholder="Search categories…" empty="No categories yet."/>}
+  </div></>;
+}
+
+function WholesaleList({role}){
+ const [rows,setRows]=useState([]);const [loading,setLoading]=useState(true);const [error,setError]=useState('');
+ useEffect(()=>{wholesaleApi.getMine().then(res=>setRows(res.data||[])).catch(err=>setError(extractErrorMessage(err))).finally(()=>setLoading(false));},[]);
+ const columns=role==='supplier'
+  ?[{key:'orderNumber',label:'Order'},{key:'vendor',label:'Vendor',render:r=>r.vendor?.companyName||r.vendor?.fullName||'Vendor'},{key:'totalAmount',label:'Total',render:r=>money(r.totalAmount)},{key:'status',label:'Status',render:r=><em className={'status '+(r.status==='CONFIRMED_RELEASED'?'active':'warning')}>{r.status}</em>}]
+  :[{key:'orderNumber',label:'Order'},{key:'supplier',label:'Supplier',render:r=>r.supplier?.companyName||r.supplier?.fullName||'Supplier'},{key:'totalAmount',label:'Total',render:r=>money(r.totalAmount)},{key:'status',label:'Status',render:r=><em className={'status '+(r.status==='CONFIRMED_RELEASED'?'active':'warning')}>{r.status}</em>}];
+ return <><Header eyebrow={role==='supplier'?'SUPPLIER · ORDERS':'VENDOR · PURCHASES'} title={role==='supplier'?'Vendor orders':'Purchases'} desc={role==='supplier'?'Wholesale orders vendors have placed with you.':'Wholesale stock you have ordered from suppliers.'}/>
+  {error&&<div className="form-error">{error}</div>}
+  <div className="data-card">{loading&&<div className="empty-state"><h3>Loading…</h3></div>}
+   {!loading&&<SmartTable columns={columns} rows={rows} rowKey={r=>r.id} searchPlaceholder="Search wholesale orders…" empty="No wholesale orders yet."/>}
+  </div></>;
+}
+
+function AdminPayments(){
+ const [rows,setRows]=useState([]);const [loading,setLoading]=useState(true);const [error,setError]=useState('');
+ useEffect(()=>{adminApi.getPayments({pageSize:100}).then(res=>setRows(res.data||[])).catch(err=>setError(extractErrorMessage(err))).finally(()=>setLoading(false));},[]);
+ return <><Header eyebrow="ADMIN · PAYMENTS" title="Payments" desc="Monitor payment confirmations and protected settlement states."/>
+  {error&&<div className="form-error">{error}</div>}
+  <div className="data-card">{loading&&<div className="empty-state"><h3>Loading…</h3></div>}
+   {!loading&&<SmartTable columns={[{key:'transactionReference',label:'Reference'},{key:'order',label:'Order',render:r=>r.parentOrder?.orderNumber||r.parentOrderId},{key:'amount',label:'Amount',render:r=>money(r.amount)},{key:'method',label:'Method'},{key:'status',label:'Status',render:r=><em className={'status '+(r.status==='SUCCESS'?'active':'warning')}>{r.status}</em>}]} rows={rows} rowKey={r=>r.id} searchPlaceholder="Search payments…" empty="No payments yet."/>}
+  </div></>;
+}
+
+function DisputesList({role}){
+ const [rows,setRows]=useState([]);const [loading,setLoading]=useState(true);const [error,setError]=useState('');
+ useEffect(()=>{disputesApi.getAll({pageSize:100}).then(res=>setRows(res.data||[])).catch(err=>setError(extractErrorMessage(err))).finally(()=>setLoading(false));},[]);
+ return <><Header eyebrow={`${role.toUpperCase()} · REFUNDS`} title="Refunds & disputes" desc="Review reported problems, evidence and their current resolution status."/>
+  {error&&<div className="form-error">{error}</div>}
+  <div className="data-card">{loading&&<div className="empty-state"><h3>Loading…</h3></div>}
+   {!loading&&<SmartTable columns={[{key:'disputeNumber',label:'Case'},{key:'order',label:'Order',render:r=>r.order?.orderNumber||''},{key:'reason',label:'Reason'},{key:'disputedAmount',label:'Amount',render:r=>money(r.disputedAmount)},{key:'status',label:'Status',render:r=><em className={'status '+(r.status.startsWith('RESOLVED')?'active':'warning')}>{r.status}</em>}]} rows={rows} rowKey={r=>r.id} searchPlaceholder="Search disputes…" empty="No disputes yet."/>}
+  </div></>;
+}
+
 function GenericTableModule({role,type}){
  const cfg=moduleConfig[role][type];
  const [rows,setRows]=useState(()=>read(`mvec_${role}_${type}`,null));
@@ -61,7 +110,7 @@ function GenericTableModule({role,type}){
   categories:categories.map((x,i)=>({id:`CAT-${i+1}`,name:x,products:[42,31,27,24,18,16,12,9][i],status:i===6?'Paused':'Active'})),
   purchases:[{id:'PO-2026-001',supplier:'Rwanda Wholesale Suppliers',items:24,total:2200000,status:'HELD',date:'28/08/2026'},{id:'PO-2026-002',supplier:'East Africa Fashion Supply',items:40,total:1800000,status:'RELEASED',date:'25/08/2026'},{id:'PO-2026-003',supplier:'Kigali General Suppliers',items:16,total:920000,status:'PROCESSING',date:'02/09/2026'}],
   advertisements:[{id:'AD-1001',product:'Samsung Galaxy S25',placement:'Homepage hero',budget:150000,status:'Active',clicks:1820,impressions:28400},{id:'AD-1002',product:'Classic Leather Sneakers',placement:'Fashion category',budget:80000,status:'Scheduled',clicks:0,impressions:0},{id:'AD-1003',product:'Office Chair Pro',placement:'Search results',budget:95000,status:'Paused',clicks:412,impressions:7900}],
-  subscription:role==='vendor'?[{id:'SUB-V-101',plan:'Vendor Premium',holder:'Kigali Tech Store',price:15000,billing:'Monthly',renewal:'30/09/2026',status:'Active'},{id:'SUB-V-102',plan:'Vendor Premium',holder:'Fashion Rwanda',price:15000,billing:'Monthly',renewal:'—',status:'Available'}]:[{id:'SUB-S-101',plan:'Supplier Plus',holder:'Rwanda Wholesale Suppliers',price:25000,billing:'Monthly',renewal:'20/09/2026',status:'Active'},{id:'SUB-S-102',plan:'Supplier Plus',holder:'East Africa Fashion Supply',price:25000,billing:'Monthly',renewal:'—',status:'Available'}],
+  subscription:role==='vendor'?[{id:'SUB-V-101',plan:'Vendor Premium',holder:'Kigali Tech Store',price:15000,billing:'Monthly',renewal:'30/09/2026',status:'Active'},{id:'SUB-V-102',plan:'Vendor Premium',holder:'Fashion Rwanda',price:15000,billing:'Monthly',renewal:'N/A',status:'Available'}]:[{id:'SUB-S-101',plan:'Supplier Plus',holder:'Rwanda Wholesale Suppliers',price:25000,billing:'Monthly',renewal:'20/09/2026',status:'Active'},{id:'SUB-S-102',plan:'Supplier Plus',holder:'East Africa Fashion Supply',price:25000,billing:'Monthly',renewal:'N/A',status:'Available'}],
   refunds:[{id:'REF-ADM-001',order:'MVEC-WIRELESS-NOISE-CANCELLING-HEADPHONES-2026-000001-4821',requester:'Aline Uwase',reason:'Damaged on arrival',amount:68000,evidence:'Photo attached',status:'Pending review',date:'31/08/2026'},{id:'REF-ADM-002',order:'MVEC-SNEAKERS-2026-000002-4822',requester:'Jean Paul',reason:'Wrong size delivered',amount:95000,evidence:'Photo attached',status:'Approved',date:'30/08/2026'},{id:'REF-ADM-003',order:'SUP-2026-1001',requester:'Kigali Tech Store',reason:'Missing wholesale items',amount:2200000,evidence:'Delivery record',status:'Escalated',date:'29/08/2026'}],
   reviews:role==='supplier'?[{id:'REV-S-301',product:'Bulk Bluetooth Headsets',reviewer:'Kigali Tech Store',rating:5,comment:'Consistent stock and reliable fulfillment.',status:'Published',date:'31/08/2026'},{id:'REV-S-302',product:'Fashion Basics Pack',reviewer:'Urban Closet',rating:4,comment:'Good wholesale pricing and packaging.',status:'Published',date:'30/08/2026'},{id:'REV-S-303',product:'Kitchen Starter Set',reviewer:'HomeStyle Kigali',rating:3,comment:'Delivery arrived one day late.',status:'Needs response',date:'29/08/2026'}]:[{id:'REV-V-201',product:'Wireless Headphones',reviewer:'Aline Uwase',rating:5,comment:'Great sound and fast delivery.',status:'Published',date:'31/08/2026'},{id:'REV-V-202',product:'Smart Watch Active',reviewer:'Jean Paul',rating:4,comment:'Good battery life.',status:'Published',date:'30/08/2026'},{id:'REV-V-203',product:'Office Chair Pro',reviewer:'Diane Mukamana',rating:2,comment:'Assembly instructions were unclear.',status:'Needs response',date:'29/08/2026'}],
   shipping:[{id:'ZONE-001',zone:'Kigali City',fee:2000,eta:'Same day',method:'Standard / Pickup',status:'Active'},{id:'ZONE-002',zone:'Northern Province',fee:5000,eta:'2–4 days',method:'Standard',status:'Active'},{id:'ZONE-003',zone:'Southern Province',fee:7000,eta:'3–6 days',method:'Standard',status:'Active'},{id:'ZONE-004',zone:'Eastern Province',fee:7000,eta:'3–6 days',method:'Standard',status:'Paused'}],
@@ -71,7 +120,7 @@ function GenericTableModule({role,type}){
   fraud:[{id:'RISK-1001',affiliate:'AFF-00045',signal:'Self-referral pattern',orders:2,risk:'High',status:'Flagged'},{id:'RISK-1002',affiliate:'AFF-00021',signal:'Repeated device clicks',orders:18,risk:'Medium',status:'Review'},{id:'RISK-1003',affiliate:'AFF-00018',signal:'Unusual conversion timing',orders:7,risk:'Low',status:'Monitoring'}],
   payments:[{id:'PAY-2026-0001',order:'MVEC-WIRELESS-NOISE-CANCELLING-HEADPHONES-2026-000001-4821',payer:'Aline Uwase',amount:68000,method:'MTN MoMo',status:'HELD'},{id:'PAY-2026-0002',order:'MVEC-SNEAKERS-2026-000002-4822',payer:'Jean Paul',amount:95000,method:'Airtel Money',status:'RELEASED'},{id:'PAY-2026-0003',order:'SUP-2026-1001',payer:'Kigali Tech Store',amount:2200000,method:'MTN MoMo',status:'PENDING'}],
   adminRefunds:[{id:'REF-ADM-001',order:'MVEC-WIRELESS-NOISE-CANCELLING-HEADPHONES-2026-000001-4821',requester:'Aline Uwase',reason:'Damaged on arrival',amount:68000,evidence:'Photo attached',status:'Pending review',date:'31/08/2026'},{id:'REF-ADM-002',order:'MVEC-SNEAKERS-2026-000002-4822',requester:'Jean Paul',reason:'Wrong size delivered',amount:95000,evidence:'Photo attached',status:'Approved',date:'30/08/2026'},{id:'REF-ADM-003',order:'SUP-2026-1001',requester:'Kigali Tech Store',reason:'Missing wholesale items',amount:2200000,evidence:'Delivery record',status:'Escalated',date:'29/08/2026'}],
-  advertising:[{id:'AD-ADM-01',vendor:'Kigali Tech Store',product:'Samsung Galaxy S25',placement:'Homepage',budget:250000,status:'Active',ctr:'6.4%'},{id:'AD-ADM-02',vendor:'Fashion Rwanda',product:'Classic Leather Sneakers',placement:'Fashion category',budget:100000,status:'Pending approval',ctr:'—'}],
+  advertising:[{id:'AD-ADM-01',vendor:'Kigali Tech Store',product:'Samsung Galaxy S25',placement:'Homepage',budget:250000,status:'Active',ctr:'6.4%'},{id:'AD-ADM-02',vendor:'Fashion Rwanda',product:'Classic Leather Sneakers',placement:'Fashion category',budget:100000,status:'Pending approval',ctr:'N/A'}],
   subscriptions:[{id:'SUB-001',holder:'Kigali Tech Store',type:'Vendor Premium',amount:15000,cycle:'Monthly',status:'Active'},{id:'SUB-002',holder:'Aline Uwase',type:'Buyer Ad Removal',amount:5000,cycle:'Monthly',status:'Active'},{id:'SUB-003',holder:'Fashion Rwanda',type:'Vendor Premium',amount:15000,cycle:'Monthly',status:'Expired'}],
   languages:[{code:'rw',name:'Kinyarwanda',role:'Primary',coverage:'100%',activeUsers:'58%'},{code:'en',name:'English',role:'Secondary',coverage:'100%',activeUsers:'34%'},{code:'fr',name:'French',role:'Secondary',coverage:'72%',activeUsers:'8%'}],
   locations:[{province:'Kigali City',districts:3,sectors:35,deliveryFee:2000,coverage:'100%'},{province:'Northern Province',districts:5,sectors:36,deliveryFee:5000,coverage:'92%'},{province:'Southern Province',districts:8,sectors:101,deliveryFee:7000,coverage:'86%'},{province:'Eastern Province',districts:7,sectors:95,deliveryFee:7000,coverage:'83%'}],
@@ -103,6 +152,12 @@ function GenericTableModule({role,type}){
    return editable?<button className="table-action-btn" onClick={()=>{const nextStatus=row.status==='Active'?'Paused':'Active';const key=Object.keys(row).find(k=>k==='status');if(key)save(data.map(x=>x===row?{...x,status:nextStatus}:x));notify(`Record ${nextStatus.toLowerCase()}.`)}}>{row.status==='Active'?'Pause':'Activate'}</button>:null;
  };
  if(type==='support') return <SupportModule role={role}/>;
+ if(type==='notifications') return <><Header eyebrow={`${role.toUpperCase()} · ${cfg[0]}`} title={cfg[1]} desc={cfg[2]}/><NotificationPanel/></>;
+ if(type==='categories'&&role==='vendor') return <VendorCategories/>;
+ if(type==='purchases'&&role==='vendor') return <WholesaleList role="vendor"/>;
+ if((type==='supply-requests'||type==='transactions')&&role==='supplier') return <WholesaleList role="supplier"/>;
+ if(type==='payments'&&role==='admin') return <AdminPayments/>;
+ if(type==='refunds') return <DisputesList role={role}/>;
  return <><Header eyebrow={`${role.toUpperCase()} · ${cfg[0]}`} title={cfg[1]} desc={cfg[2]}/>{notice&&<div className="success-text">{notice}</div>}<div className="data-card"><SmartTable columns={columns} rows={data} rowKey={r=>r.id||r.name||r.plan||r.zone||r.control||r.signal||r.party} searchPlaceholder={`Search ${cfg[1].toLowerCase()}…`} exportName={`mvec-${role}-${type}`} actions={actionTypes.includes(type)?contextualAction:undefined}/></div>{details&&<div className="modal-backdrop" onMouseDown={()=>setDetails(null)}><div className="modal" onMouseDown={e=>e.stopPropagation()}><button className="modal-close" onClick={()=>setDetails(null)}>×</button><span className="eyebrow">DETAILS</span><h2>{type==='trust'?'Trust profile':'Security policy'}</h2><div className="vendor-detail-grid">{Object.entries(details).map(([k,v])=><div key={k}><span>{k.replace(/([A-Z])/g,' $1')}</span><b>{String(v)}</b></div>)}</div><button className="gradient-btn" onClick={()=>setDetails(null)}>Done</button></div></div>}</>;
 }
 
@@ -113,23 +168,63 @@ function SupportModule({role}){
  return <div className="data-card support-direct"><h3>Contact MVEC</h3><p>Send a message directly to the MVEC support team. Your request can be linked to an order or transaction reference.</p><div className="form-row"><label className="field"><span>Subject</span><input value={subject} onChange={e=>setSubject(e.target.value)}/></label><label className="field"><span>Order or transaction ID</span><input value={reference} onChange={e=>setReference(e.target.value)} placeholder="Optional"/></label></div><label className="field"><span>Message</span><textarea rows="5" value={message} onChange={e=>setMessage(e.target.value)} placeholder="Describe the issue…"/></label><div className="support-actions"><button className="gradient-btn" onClick={submit} disabled={!subject.trim()||!message.trim()}>Send to MVEC</button><a className="outline-btn" href="sms:+250788100000">Send SMS</a></div>{sent&&<p className="success-text">Support request submitted successfully.</p>}</div>;
 }
 function BuyerRefunds(){
- const [rows,setRows]=useState(()=>read('mvec_buyer_refunds',[{id:'REF-1001',order:'MVEC-WIRELESS-NOISE-CANCELLING-HEADPHONES-2026-000001-4821',reason:'Damaged product',amount:68000,status:'Under review',date:'31/08/2026'}]));
- const orders=getOrders(); const [open,setOpen]=useState(false); const [orderId,setOrderId]=useState(orders[0]?.id||''); const [reason,setReason]=useState(''); const [message,setMessage]=useState('');
- const submit=()=>{const order=orders.find(o=>String(o.id)===String(orderId));if(!order||!reason.trim())return;const next={id:`REF-${Date.now()}`,order:order.id,reason:reason.trim(),amount:Number(order.total||0),status:'Submitted',date:dateDMY(new Date())};const list=[next,...rows];setRows(list);write('mvec_buyer_refunds',list);setReason('');setMessage('Refund request submitted successfully.');setOpen(false);setTimeout(()=>setMessage(''),2200)};
- return <><Header eyebrow="BUYER" title="Refunds" desc="Request and track refunds with evidence and a clear audit trail."/><SettingCard title="Request a refund"><p className="tiny">Choose an order, explain the problem and submit the request for review.</p><button className="gradient-btn" onClick={()=>setOpen(true)}>Start refund request</button>{message&&<p className="success-text">{message}</p>}</SettingCard><div className="data-card"><SmartTable columns={[{key:'id',label:'Refund'},{key:'order',label:'Order'},{key:'reason',label:'Reason'},{key:'amount',label:'Amount',render:r=>money(r.amount)},{key:'status',label:'Status'},{key:'date',label:'Date'}]} rows={rows} rowKey={r=>r.id} searchPlaceholder="Search refunds…" exportName="buyer-refunds"/></div>{open&&<div className="modal-backdrop" onMouseDown={()=>setOpen(false)}><div className="modal" onMouseDown={e=>e.stopPropagation()}><button className="modal-close" onClick={()=>setOpen(false)}>×</button><span className="eyebrow">REFUND REQUEST</span><h2>Request a refund</h2><label className="field"><span>Order</span><select value={orderId} onChange={e=>setOrderId(e.target.value)}>{orders.length?orders.map(o=><option key={o.id} value={o.id}>{o.id} · {money(o.total)}</option>):<option value="">No orders available</option>}</select></label><label className="field"><span>Reason</span><input value={reason} onChange={e=>setReason(e.target.value)} placeholder="e.g. Damaged product"/></label><div className="modal-actions"><button className="outline-btn" onClick={()=>setOpen(false)}>Cancel</button><button className="gradient-btn" onClick={submit} disabled={!orderId||!reason.trim()}>Submit request</button></div></div></div>}</>;
+ const [rows,setRows]=useState([]);const [loading,setLoading]=useState(true);const [error,setError]=useState('');
+ useEffect(()=>{disputesApi.getAll({pageSize:50}).then(res=>setRows(res.data||[])).catch(err=>setError(extractErrorMessage(err))).finally(()=>setLoading(false));},[]);
+ return <><Header eyebrow="BUYER" title="Refunds" desc="Track refund requests you've reported from your orders."/>
+  <SettingCard title="Report a problem with an order" desc="Open the order and choose Report a problem to start a refund request with evidence."><Link className="gradient-btn" to="/orders">View my orders</Link></SettingCard>
+  {error&&<div className="form-error">{error}</div>}
+  <div className="data-card">{loading&&<div className="empty-state"><h3>Loading…</h3></div>}
+   {!loading&&<SmartTable columns={[{key:'disputeNumber',label:'Case'},{key:'order',label:'Order',render:r=>r.order?.orderNumber||''},{key:'reason',label:'Reason'},{key:'disputedAmount',label:'Amount',render:r=>money(r.disputedAmount)},{key:'status',label:'Status'}]} rows={rows} rowKey={r=>r.id} searchPlaceholder="Search refunds…" empty="No refund requests yet." exportName="buyer-refunds"/>}
+  </div></>;
 }
 
-function BuyerMessages(){
- const [text,setText]=useState(''); const [msgs,setMsgs]=useState(()=>read('mvec_buyer_messages',[{from:'Kigali Tech Store',text:'Your order is being prepared.',date:'31/08/2026'}]));
- const send=()=>{if(!text.trim())return;const next=[...msgs,{from:'You',text:text.trim(),date:dateDMY(new Date())}];setMsgs(next);write('mvec_buyer_messages',next);setText('');};
- return <><Header eyebrow="BUYER" title="Messages" desc="Contact a seller about an order and keep the conversation linked to its reference."/><div className="data-card"><div className="thread-head"><div><h3>Kigali Tech Store</h3><small>MVEC-WIRELESS-NOISE-CANCELLING-HEADPHONES-2026-000001-4821</small></div><Link className="outline-btn" to="/orders">View order</Link></div><div className="message-list">{msgs.map((m,i)=><div key={i} className={'message-bubble '+(m.from==='You'?'mine':'theirs')}><p>{m.text}</p><small>{m.from} · {m.date}</small></div>)}</div><div className="message-compose"><input value={text} onChange={e=>setText(e.target.value)} placeholder="Write a message…" onKeyDown={e=>e.key==='Enter'&&send()}/><button className="gradient-btn" onClick={send}>Send</button></div></div></>;
+function BuyerCompare(){
+  const [products,setProducts]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [error,setError]=useState('');
+  useEffect(()=>{
+    productsApi.getRecommendations(3)
+      .then(res=>setProducts((res.products||[]).map(mapBackendProduct)))
+      .catch(err=>setError(extractErrorMessage(err)))
+      .finally(()=>setLoading(false));
+  },[]);
+  return <>
+    <Header eyebrow="BUYER" title="Compare products" desc="Compare price, rating, stock and seller trust before you buy."/>
+    {loading && <div className="empty-state"><h3>Loading…</h3></div>}
+    {error && <div className="form-error">{error}</div>}
+    {!loading && !error && products.length===0 && <div className="empty-state"><h3>No products to compare yet</h3></div>}
+    <div className="dash-grid">
+      {products.map(p=><div className="data-card" key={p.id}><img className="module-product-image" src={p.image} alt=""/><h3>{p.name}</h3><p>{p.vendor}</p><strong>{money(p.price)}</strong><div className="comparison-list"><span>Rating <b>★ {p.rating}</b></span><span>Stock <b>{p.stock}</b></span><span>Seller <b>Verified ✓</b></span><span>Category <b>{p.category}</b></span></div></div>)}
+    </div>
+  </>;
+}
+
+function BuyerRecommendations(){
+  const [products,setProducts]=useState([]);
+  const [personalized,setPersonalized]=useState(false);
+  const [loading,setLoading]=useState(true);
+  const [error,setError]=useState('');
+  useEffect(()=>{
+    productsApi.getRecommendations(8)
+      .then(res=>{ setProducts((res.products||[]).map(mapBackendProduct)); setPersonalized(Boolean(res.personalized)); })
+      .catch(err=>setError(extractErrorMessage(err)))
+      .finally(()=>setLoading(false));
+  },[]);
+  return <>
+    <Header eyebrow="BUYER" title="Recommended for you" desc={personalized?"Based on categories you've bought from before.":"Popular and top-rated products across the marketplace."}/>
+    {loading && <div className="empty-state"><h3>Loading…</h3></div>}
+    {error && <div className="form-error">{error}</div>}
+    {!loading && !error && products.length===0 && <div className="empty-state"><h3>No recommendations yet</h3><p>Browse the shop to see personalized picks appear here.</p></div>}
+    <div className="product-grid">
+      {products.map(p=><div className="product-card" key={p.id}><Link to={`/product/${p.id}`} className="product-img"><img src={p.image} alt={p.name}/></Link><div className="product-info"><small>{personalized?'Recommended for you':'Trending'}</small><Link to={`/product/${p.id}`} className="product-name">{p.name}</Link><b>{money(p.price)}</b></div></div>)}
+    </div>
+  </>;
 }
 
 function BuyerModule({type}){
- if(type==='compare') return <><Header eyebrow="BUYER" title="Compare products" desc="Compare price, rating, stock and seller trust before you buy."/><div className="dash-grid">{products.slice(0,3).map(p=><div className="data-card" key={p.id}><img className="module-product-image" src={p.image} alt=""/><h3>{p.name}</h3><p>{p.vendor}</p><strong>{money(p.price)}</strong><div className="comparison-list"><span>Rating <b>★ {p.rating}</b></span><span>Stock <b>{p.stock}</b></span><span>Seller <b>Verified ✓</b></span><span>Category <b>{p.category}</b></span></div></div>)}</div></>;
- if(type==='recommendations') return <><Header eyebrow="BUYER" title="Recommended for you" desc="Recommendations can use purchases, searches, views and similar products."/><div className="product-grid">{products.slice(0,6).map(p=><div className="product-card" key={p.id}><Link to={`/product/${p.id}`} className="product-img"><img src={p.image} alt={p.name}/></Link><div className="product-info"><small>Recommended</small><Link to={`/product/${p.id}`} className="product-name">{p.name}</Link><b>{money(p.price)}</b></div></div>)}</div></>;
+ if(type==='compare') return <BuyerCompare/>;
+ if(type==='recommendations') return <BuyerRecommendations/>;
  if(type==='refunds') return <BuyerRefunds/>;
- if(type==='messages') return <BuyerMessages/>;
  if(type==='notifications') return <><Header eyebrow="BUYER" title="Notifications" desc="Order, payment, delivery and marketplace updates in one place."/><NotificationPanel role="buyer"/></>;
  if(type==='support') return <><Header eyebrow="BUYER" title="Help & Support" desc="Get help with orders, payments, delivery and refunds."/><div className="dash-grid"><SettingCard title="Order problem" desc="Something went wrong with an order? Open the order and choose Report a problem."><Link className="gradient-btn" to="/orders">View my orders</Link></SettingCard><SettingCard title="Common questions"><div className="timeline">{['How do I track my order?','How are delivery fees calculated?','How do refunds work?','How can I contact a seller?'].map((x,i)=><div className="timeline-item done" key={x}><i/><div><b>{i+1}. {x}</b><small>MVEC Help Center</small></div></div>)}</div></SettingCard></div></>;
  if(type==='subscription') return <BuyerSubscription/>;

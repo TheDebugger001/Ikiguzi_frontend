@@ -1,7 +1,6 @@
 import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
 import Pagination from "../components/Pagination";
-import { products as seedProducts, categories as seedCategories, vendors as seedVendors } from "../data";
 import { loadCatalog } from "../services/catalogApi";
 import Storefront from "../components/Storefront";
 import Icon from "../components/Icon";
@@ -54,21 +53,22 @@ export default function Home() {
   const [vendorPage, setVendorPage] = useState(1);
   const pp = 8,
     vp = 4;
-  const [products, setProducts] = useState(seedProducts);
-  const [categories, setCategories] = useState(seedCategories);
-  const [vendors, setVendors] = useState(seedVendors);
+  const [products, setProducts] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [vendors, setVendors] = useState([]);
+  const [catalogLoading, setCatalogLoading] = useState(true);
 
   useEffect(() => {
     let mounted = true;
     loadCatalog().then((cat) => {
       if (!mounted) return;
-      setProducts(cat.products && cat.products.length ? cat.products : seedProducts);
-      const cats = cat.categories && cat.categories.length
-        ? cat.categories.map((c) => (typeof c === "string" ? c : c.name)).filter(Boolean)
-        : seedCategories;
-      setCategories(cats.length ? cats : seedCategories);
-      setVendors(cat.vendors && cat.vendors.length ? cat.vendors : seedVendors);
-    });
+      setProducts(cat.products || []);
+      const cats = (cat.categories || [])
+        .map((c) => (typeof c === "string" ? c : c.name))
+        .filter(Boolean);
+      setCategories(cats);
+      setVendors(cat.vendors || []);
+    }).finally(() => mounted && setCatalogLoading(false));
     return () => { mounted = false; };
   }, []);
 
@@ -82,7 +82,7 @@ export default function Home() {
     <Storefront>
       <main className="home-page">
         <section className="hero-market hero-modern">
-          <div className="hero-copy">
+          <div className="hero-copy hero-enter-left">
             <span className="eyebrow">MVEC MARKETPLACE</span>
             <h1 className="hero-animated-title">
               <span>Shop.</span> <span>Sell.</span>
@@ -106,7 +106,7 @@ export default function Home() {
               <span>✓ Local delivery</span>
             </div>
           </div>
-          <div className="hero-visual dynamic-product-stage">
+          <div className="hero-visual dynamic-product-stage hero-enter-right">
             <div className="visual-glow" />
             {heroProducts.map((p, i) => (
               <Link
@@ -121,17 +121,19 @@ export default function Home() {
             ))}
           </div>
         </section>
-        <section className="moving-products">
-          <div className="moving-track">
-            {[...products, ...products].map((p, i) => (
-              <Link to={`/product/${p.id}`} key={i} className="moving-product">
-                <img src={p.image} alt="" />
-                <span>{p.name}</span>
-                <b>{money(p.price)}</b>
-              </Link>
-            ))}
-          </div>
-        </section>
+        {products.length > 0 && (
+          <section className="moving-products">
+            <div className="moving-track">
+              {[...products, ...products].map((p, i) => (
+                <Link to={`/product/${p.id}`} key={i} className="moving-product">
+                  <img src={p.image} alt="" />
+                  <span>{p.name}</span>
+                  <b>{money(p.price)}</b>
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
         <section className="category-strip">
           <div className="section-heading">
             <div>
@@ -154,6 +156,9 @@ export default function Home() {
                 <small>Explore products</small>
               </Link>
             ))}
+            {categories.length === 0 && !catalogLoading && (
+              <p className="tiny">Categories will appear here once they're added to the marketplace.</p>
+            )}
           </div>
         </section>
         <section className="product-section">

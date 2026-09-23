@@ -1,11 +1,12 @@
 import {useMemo,useState} from 'react';
 import {Link,useLocation} from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
+import Storefront from '../components/Storefront';
+import Messages from './Messages';
 import SmartTable from '../components/SmartTable';
 import Icon from '../components/Icon';
 import {getLedger,getCommissionRules,saveCommissionRules,calculateOrderPricing,getOrders,recordLedgerEntry,addNotification,getSubscription,setSubscription} from '../services/mvecStore';
 import {products,vendors} from '../data';
-import {useLanguage} from '../context/LanguageContext';
 
 const money=n=>new Intl.NumberFormat('en-RW').format(Number(n)||0)+' RWF';
 const dmy=d=>new Date(d).toLocaleDateString('en-GB');
@@ -37,14 +38,10 @@ export function AdminAnalytics(){
 }
 
 export function CommunicationPage({role}){
- const defaults=role==='supplier'?[{id:'CON-SUP-1',reference:'SUP-2026-1001',with:'Kigali Tech Store',topic:'Supply order',last:'Please confirm the delivery time.',unread:2,date:'31/08/2026'}]:role==='vendor'?[{id:'CON-VEN-1',reference:'MVEC-HEADPHONES-2026-0001',with:'Aline Uwase',topic:'Order delivery',last:'I will be available for delivery.',unread:1,date:'31/08/2026'}]:[{id:'CON-BUY-1',reference:'MVEC-HEADPHONES-2026-0001',with:'Kigali Tech Store',topic:'Order',last:'Your order is being prepared.',unread:1,date:'31/08/2026'}];
- const [conversations,setConversations]=useState(()=>read(`mvec_conversations_${role}`,defaults)); const [selected,setSelected]=useState(conversations[0]); const [text,setText]=useState(''); const [recipient,setRecipient]=useState(''); const people=read('mvec_users',[{id:'u3',fullName:'MVEC Administrator',email:'admin@mvec.rw',telephone:'+250788100003',role:'super_admin'},{id:'u1',fullName:'Aline Uwase',email:'buyer@mvec.rw',telephone:'+250788100001',role:'buyer'},{id:'u2',fullName:'Eric Mugabo',email:'vendor@mvec.rw',telephone:'+250788100002',role:'vendor'},{id:'u4',fullName:'Rwanda Wholesale Supplier',email:'supplier@mvec.rw',telephone:'+250788100004',role:'supplier'},{id:'u5',fullName:'MVEC Affiliate Network',email:'affiliate@mvec.rw',telephone:'+250788100005',role:'affiliate'},{id:'u6',fullName:'MVEC Delivery Team',email:'delivery@mvec.rw',telephone:'+250788100006',role:'delivery'}]);
- const messages=read(selected?`mvec_messages_${role}_${selected.id}`:'mvec_messages_none',[{from:'other',text:selected?.last||'Welcome to the conversation.',date:selected?.date||dmy(new Date())}]);
- const [thread,setThread]=useState(messages);
- const send=()=>{if(!text.trim()||!selected)return;const next=[...thread,{from:'me',text:text.trim(),date:dmy(new Date())}];setThread(next);write(`mvec_messages_${role}_${selected.id}`,next);setText('');setConversations(cs=>cs.map(c=>c.id===selected.id?{...c,last:text.trim(),unread:0,date:dmy(new Date())}:c));addNotification({role,recipient:selected.with,type:'message',title:'New message',message:`New message for ${selected.reference}.`,reference:selected.reference});}; const startConversation=()=>{const person=people.find(x=>x.id===recipient);if(!person)return;const c={id:`CON-${Date.now()}`,reference:`DIRECT-${Date.now()}`,with:person.fullName,topic:'Direct message',last:'New conversation',unread:0,date:dmy(new Date()),phone:person.telephone};setConversations(cs=>[c,...cs]);setSelected(c);setThread([]);setRecipient('');};
- return <DashboardLayout admin={role==='admin'}><Header eyebrow={`${role.toUpperCase()} · COMMUNICATION`} title="Messages" desc="Keep conversations connected to the order or supply transaction they belong to."/><div className="communication-layout"><div className="data-card conversation-list"><div className="new-conversation"><select value={recipient} onChange={e=>setRecipient(e.target.value)}><option value="">Message a user…</option>{people.filter(p=>p.role!==role).map(p=><option key={p.id} value={p.id}>{p.fullName} · {p.role}</option>)}</select><button className="outline-btn" onClick={startConversation} disabled={!recipient}>Start</button></div>{conversations.map(c=><button key={c.id} className={'conversation-item '+(selected?.id===c.id?'selected':'')} onClick={()=>{setSelected(c);setThread(read(`mvec_messages_${role}_${c.id}`,[{from:'other',text:c.last,date:c.date}]))}}><div><b>{c.with}</b><small>{c.reference}</small><p>{c.last}</p></div>{c.unread>0&&<span className="nav-count">{c.unread}</span>}</button>)}</div><div className="data-card message-thread"><div className="thread-head"><div><h3>{selected?.with||'Conversation'}</h3><small>{selected?.reference} {selected?.phone&&` · ${selected.phone}`}</small></div><div className="thread-actions"><Link className="outline-btn" to={role==='delivery'?'/delivery':role==='admin'?'/admin/deliveries':selected?.reference?.startsWith('SUP-')?'/supplier/delivery':'/vendor/delivery'}>Track</Link>{selected?.phone&&<a className="outline-btn" href={`sms:${selected.phone}`}>SMS</a>}</div></div><div className="message-list">{thread.map((m,i)=><div key={i} className={'message-bubble '+(m.from==='me'?'mine':'theirs')}><p>{m.text}</p><small>{m.date}</small></div>)}</div><div className="message-compose"><input value={text} onChange={e=>setText(e.target.value)} placeholder="Write a message…" onKeyDown={e=>e.key==='Enter'&&send()}/><button className="gradient-btn" onClick={send}>Send</button></div></div></div></DashboardLayout>
+  return role==='buyer'
+    ? <Storefront><main className="account-page"><Messages/></main></Storefront>
+    : <DashboardLayout admin={role==='admin'}><Messages/></DashboardLayout>;
 }
-
 export function BuyerSubscription(){
  const [active,setActive]=useState(()=>getSubscription('buyer')==='premium'); const [notice,setNotice]=useState('');
  const toggle=()=>{const next=!active;setSubscription('buyer',next?'premium':'free');setActive(next);setNotice(next?'Premium buyer activated.':'Premium buyer plan cancelled.');setTimeout(()=>setNotice(''),1800)};
@@ -62,8 +59,5 @@ export function RiskManagement(){
 }
 
 export function LanguageSettings(){
- const {translations,custom,updateTranslation}=useLanguage();
- const [lang,setLang]=useState('en');
- const keys=Object.keys(translations.en);
- return <DashboardLayout admin><Header eyebrow="PLATFORM · LANGUAGES" title="Language management" desc="Manage the marketplace language options and translation keys."/><div className="data-card"><div className="language-admin-head"><div><h3>Translation keys</h3><span>Changes are saved for the selected language.</span></div><select className="period-select" value={lang} onChange={e=>setLang(e.target.value)}><option value="en">English</option><option value="rw">Kinyarwanda</option><option value="fr">Français</option></select></div><div className="translation-list">{keys.map(key=><label className="translation-row" key={key}><span><b>{key}</b><small>English: {translations.en[key]}</small></span><input value={custom[lang]?.[key]||translations[lang]?.[key]||''} onChange={e=>updateTranslation(lang,key,e.target.value)} placeholder={translations.en[key]}/></label>)}</div></div></DashboardLayout>;
+ return <DashboardLayout admin><Header eyebrow="PLATFORM · LANGUAGES" title="Language" desc="MVEC currently operates in English only."/><div className="data-card"><div className="verified-box"><b>English only</b><p>Multi-language support has been turned off. The marketplace, dashboards and notifications are all in English.</p></div></div></DashboardLayout>;
 }

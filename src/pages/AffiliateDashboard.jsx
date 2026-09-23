@@ -1,49 +1,287 @@
-import {useMemo,useState} from "react";
-import {Link,useLocation} from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useLocation } from "react-router-dom";
 import DashboardLayout from "../components/DashboardLayout";
 import Icon from "../components/Icon";
 import Pagination from "../components/Pagination";
 import SmartTable from "../components/SmartTable";
-import {products} from "../data";
-import {getAffiliateWallet,requestAffiliateWithdrawal} from "../services/mvecStore";
+import { useAuth } from "../context/AuthContext";
+import { affiliatesApi } from "../API/affiliates";
+import { productsApi } from "../API/products";
+import { mapBackendProduct } from "../services/catalogApi";
+import { extractErrorMessage } from "../API/client";
 
-const KEY="mvec_affiliate_links";
-const read=()=>{try{return JSON.parse(localStorage.getItem(KEY)||"[]")}catch{return[]}};
-const write=links=>localStorage.setItem(KEY,JSON.stringify(links));
-const money=n=>new Intl.NumberFormat("en-RW").format(Number(n)||0)+" RWF";
-const affiliateUrl=l=>`${window.location.origin}/product/${l.productId}?ref=${l.code}`;
-async function copyText(text){if(navigator.clipboard?.writeText)return navigator.clipboard.writeText(text);const el=document.createElement('textarea');el.value=text;document.body.appendChild(el);el.select();document.execCommand('copy');el.remove();}
+const money = n => new Intl.NumberFormat("en-RW").format(Number(n) || 0) + " RWF";
+const affiliateUrl = code => `${window.location.origin}/shop?ref=${code}`;
 
-function Overview(){const wallet=getAffiliateWallet();return <><div className="dash-page-head"><div><span className="eyebrow">AFFILIATE PLATFORM</span><h1>Affiliate dashboard</h1><p>Promote MVEC products and earn when qualifying orders are completed.</p></div></div><div className="metric-grid"><div className="metric"><div className="metric-icon"><Icon name="chart"/></div><div><span>Clicks</span><strong>8,420</strong><small>+18.2%</small></div></div><div className="metric"><div className="metric-icon"><Icon name="cart"/></div><div><span>Completed orders</span><strong>184</strong><small>2.18% conversion</small></div></div><div className="metric"><div className="metric-icon"><Icon name="wallet"/></div><div><span>Pending commission</span><strong>{money(wallet.pending)}</strong><small>Awaiting completion</small></div></div><div className="metric"><div className="metric-icon"><Icon name="wallet"/></div><div><span>Available wallet</span><strong>{money(wallet.available)}</strong><small>Minimum withdrawal RWF 10,000</small></div></div></div><div className="verified-box"><b>✓ Protected commission workflow</b><p>Commission follows purchase → payment → delivery → refund window → confirmation. Once available, it moves into your wallet. You can request a withdrawal from RWF 10,000 upward.</p></div></>}
-
-function Products(){
- const [links,setLinks]=useState(read());const [q,setQ]=useState('');const [page,setPage]=useState(1);const [copied,setCopied]=useState('');const perPage=6;
- const filtered=useMemo(()=>products.filter(p=>`${p.name} ${p.vendor||''} ${p.category||''}`.toLowerCase().includes(q.trim().toLowerCase())),[q]);
- const safePage=Math.min(page,Math.max(1,Math.ceil(filtered.length/perPage)));const shown=filtered.slice((safePage-1)*perPage,safePage*perPage);
- const make=p=>{const existing=links.find(l=>String(l.productId)===String(p.id));if(existing)return existing;const l={id:`AFF-${Date.now()}`,productId:p.id,product:p.name,code:`MV${p.id}${Date.now().toString().slice(-4)}`,clicks:0,orders:0,commission:2,amount:0,createdAt:new Date().toISOString()};const n=[l,...links];setLinks(n);write(n);return l;};
- const copyFor=async p=>{const l=links.find(x=>String(x.productId)===String(p.id))||make(p);await copyText(affiliateUrl(l));setCopied(String(p.id));setTimeout(()=>setCopied(''),1600)};
- return <><div className="dash-page-head"><div><span className="eyebrow">AFFILIATE PRODUCTS</span><h1>Choose products to promote</h1><p>Search the marketplace, confirm available stock and create a unique promotion link.</p></div></div><div className="dash-toolbar"><div className="dash-filter"><Icon name="search"/><input value={q} onChange={e=>{setQ(e.target.value);setPage(1)}} placeholder="Search products, vendors or categories…"/></div><span className="table-count">{filtered.length} products</span></div><div className="dash-grid affiliate-product-grid">{shown.map(p=>{const hasLink=links.find(l=>String(l.productId)===String(p.id));return <div className="data-card" key={p.id}><div className="admin-product-main"><img src={p.image} alt=""/><div><b>{p.name}</b><small>{money(p.price)} · {p.vendor}</small></div></div><div className="affiliate-product-meta"><span>Available stock <b>{Number(p.stock||0)} units</b></span><span>Commission <b>2%</b></span></div><div className="affiliate-link-actions"><button className="gradient-btn" onClick={()=>make(p)} disabled={!!hasLink}>{hasLink?'Link created':'Create affiliate link'}</button>{hasLink&&<button className="outline-btn copy-link-btn" onClick={()=>copyFor(p)}><Icon name="copy" size={15}/>{copied===String(p.id)?'Copied':'Copy link'}</button>}</div></div>})}</div>{!shown.length&&<div className="data-card table-empty">No products match your search.</div>}<Pagination page={safePage} setPage={setPage} total={filtered.length} perPage={perPage}/></>
+async function copyText(text) {
+  if (navigator.clipboard?.writeText) return navigator.clipboard.writeText(text);
+  const el = document.createElement("textarea");
+  el.value = text;
+  document.body.appendChild(el);
+  el.select();
+  document.execCommand("copy");
+  el.remove();
 }
 
-function Links(){
- const [links]=useState(read());
- const rows=links.map(l=>{const p=products.find(x=>String(x.id)===String(l.productId));const amount=Number(l.amount ?? (Number(l.orders||0)*Number(p?.price||0)));return {...l,amount};});
- const total=rows.reduce((sum,r)=>sum+Number(r.amount||0),0);
- const display=rows.length?[...rows,{id:'AFF-TOTAL',product:'Total amount generated',isTotal:true,amount:total}]:[];
- return <><div className="dash-page-head"><div><span className="eyebrow">MY LINKS</span><h1>Affiliate links</h1><p>Track links, conversions and the sales value generated from your marketing.</p></div></div><div className="data-card"><SmartTable columns={[{key:'product',label:'Product',render:r=>r.isTotal?<b className="affiliate-total-label">Total amount generated</b>:r.product},{key:'link',label:'Link',render:r=>r.isTotal?'—':<small>{affiliateUrl(r)}</small>},{key:'clicks',label:'Clicks',render:r=>r.isTotal?'—':r.clicks},{key:'orders',label:'Orders',render:r=>r.isTotal?'—':r.orders},{key:'commission',label:'Commission',render:r=>r.isTotal?'—':<b>{r.commission}%</b>},{key:'amount',label:'Amount generated',render:r=><b>{money(r.amount)}</b>}]} rows={display} rowKey={r=>r.id} searchPlaceholder="Search affiliate links…" empty="No links yet." exportName="affiliate-links"/></div></>
+function Overview() {
+  const [wallet, setWallet] = useState(null);
+  const [links, setLinks] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    Promise.allSettled([affiliatesApi.getMyWallet(), affiliatesApi.getMyLinks()]).then(([w, l]) => {
+      if (w.status === "fulfilled") setWallet(w.value.data);
+      if (l.status === "fulfilled") setLinks(l.value.data || []);
+    }).finally(() => setLoading(false));
+  }, []);
+
+  const totalClicks = links.reduce((s, l) => s + (l.clickCount || 0), 0);
+  const totalConversions = links.reduce((s, l) => s + (l.conversionCount || 0), 0);
+  const rate = totalClicks ? ((totalConversions / totalClicks) * 100).toFixed(2) : "0.00";
+
+  return <>
+    <div className="dash-page-head"><div><span className="eyebrow">AFFILIATE PLATFORM</span><h1>Affiliate dashboard</h1><p>Promote MVEC products and earn when qualifying orders are completed.</p></div></div>
+    <div className="metric-grid">
+      <div className="metric"><div className="metric-icon"><Icon name="chart" /></div><div><span>Clicks</span><strong>{loading ? "..." : totalClicks}</strong><small>Across all your links</small></div></div>
+      <div className="metric"><div className="metric-icon"><Icon name="cart" /></div><div><span>Completed orders</span><strong>{loading ? "..." : totalConversions}</strong><small>{rate}% conversion</small></div></div>
+      <div className="metric"><div className="metric-icon"><Icon name="wallet" /></div><div><span>Pending commission</span><strong>{loading ? "..." : money(wallet?.pendingBalance)}</strong><small>Awaiting completion</small></div></div>
+      <div className="metric"><div className="metric-icon"><Icon name="wallet" /></div><div><span>Available wallet</span><strong>{loading ? "..." : money(wallet?.availableBalance)}</strong><small>Minimum withdrawal RWF 10,000</small></div></div>
+    </div>
+    <div className="verified-box"><b>✓ Protected commission workflow</b><p>Commission follows purchase, payment, delivery, refund window, then confirmation. Once available, it moves into your wallet. You can request a withdrawal from RWF 10,000 upward.</p></div>
+  </>;
 }
 
-function Earnings(){const rows=[{period:"01/08/2026 – 31/08/2026",sales:"184",commission:"RWF 420,000",status:"Available"},{period:"01/08/2026 – 31/08/2026",sales:"22",commission:"RWF 180,000",status:"Pending"}];return <><div className="dash-page-head"><div><span className="eyebrow">EARNINGS</span><h1>Commission</h1><p>Transparent affiliate earnings. Periods use D/M/Y dates.</p></div></div><div className="data-card"><SmartTable columns={[{key:'period',label:'Period'},{key:'sales',label:'Completed sales'},{key:'commission',label:'Commission'},{key:'status',label:'Status',render:r=><em className={'status '+(r.status==='Available'?'active':'warning')}>{r.status}</em>}]} rows={rows} rowKey={r=>r.period+r.status} searchPlaceholder="Search commission…"/></div></>}
+function Products() {
+  const [catalog, setCatalog] = useState([]);
+  const [links, setLinks] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [q, setQ] = useState("");
+  const [page, setPage] = useState(1);
+  const [copied, setCopied] = useState("");
+  const [creating, setCreating] = useState("");
+  const [error, setError] = useState("");
+  const perPage = 6;
 
-function Wallet(){
- const wallet=getAffiliateWallet();
- const movements=[{id:'COM-2026-0184',source:'Completed order',reference:'MVEC-ORD-0184',amount:1360,status:'Available',date:'31/08/2026'},{id:'COM-2026-0183',source:'Completed order',reference:'MVEC-ORD-0183',amount:1980,status:'Available',date:'30/08/2026'},{id:'COM-2026-0182',source:'Order awaiting completion',reference:'MVEC-ORD-0182',amount:840,status:'Pending',date:'30/08/2026'}];
- return <><div className="dash-page-head"><div><span className="eyebrow">AFFILIATE WALLET</span><h1>Wallet</h1><p>View your commission balance and wallet activity.</p></div><Link className="gradient-btn" to="/affiliate/withdrawals">Request withdrawal</Link></div><div className="metric-grid"><div className="metric"><div className="metric-icon"><Icon name="chart"/></div><div><span>Total earned</span><strong>{money(wallet.totalEarned)}</strong><small>Lifetime commission</small></div></div><div className="metric"><div className="metric-icon"><Icon name="wallet"/></div><div><span>Available balance</span><strong>{money(wallet.available)}</strong><small>Ready for withdrawal</small></div></div><div className="metric"><div className="metric-icon"><Icon name="wallet"/></div><div><span>Pending commission</span><strong>{money(wallet.pending)}</strong><small>Awaiting qualifying completion</small></div></div></div><div className="data-card"><h3>Wallet activity</h3><SmartTable columns={[{key:'id',label:'Entry'},{key:'source',label:'Source'},{key:'reference',label:'Reference'},{key:'amount',label:'Amount',render:r=>money(r.amount)},{key:'status',label:'Status',render:r=><em className={'status '+(r.status==='Available'?'active':'warning')}>{r.status}</em>},{key:'date',label:'Date'}]} rows={movements} rowKey={r=>r.id} searchPlaceholder="Search wallet activity…" exportName="affiliate-wallet-activity"/></div></>
+  useEffect(() => {
+    Promise.allSettled([productsApi.getAll(), affiliatesApi.getMyLinks()]).then(([p, l]) => {
+      if (p.status === "fulfilled") setCatalog((p.value.products || []).map(mapBackendProduct));
+      if (l.status === "fulfilled") setLinks(l.value.data || []);
+    }).finally(() => setLoading(false));
+  }, []);
+
+  const filtered = useMemo(
+    () => catalog.filter(p => `${p.name} ${p.vendor || ""} ${p.category || ""}`.toLowerCase().includes(q.trim().toLowerCase())),
+    [catalog, q],
+  );
+  const safePage = Math.min(page, Math.max(1, Math.ceil(filtered.length / perPage)));
+  const shown = filtered.slice((safePage - 1) * perPage, safePage * perPage);
+
+  const linkFor = productId => links.find(l => String(l.targetProductId) === String(productId));
+
+  const makeLink = async p => {
+    setError("");
+    setCreating(p.id);
+    try {
+      const res = await affiliatesApi.generateLink({ productId: p.id });
+      setLinks(prev => [res.data, ...prev]);
+    } catch (err) {
+      setError(extractErrorMessage(err));
+    } finally {
+      setCreating("");
+    }
+  };
+
+  const copyFor = async p => {
+    let link = linkFor(p.id);
+    if (!link) {
+      const res = await affiliatesApi.generateLink({ productId: p.id }).catch(() => null);
+      if (res) { link = res.data; setLinks(prev => [res.data, ...prev]); }
+    }
+    if (!link) return;
+    await copyText(affiliateUrl(link.affiliateCode));
+    setCopied(String(p.id));
+    setTimeout(() => setCopied(""), 1600);
+  };
+
+  return <>
+    <div className="dash-page-head"><div><span className="eyebrow">AFFILIATE PRODUCTS</span><h1>Choose products to promote</h1><p>Search the marketplace and create a unique promotion link for any product.</p></div></div>
+    {error && <div className="form-error">{error}</div>}
+    <div className="dash-toolbar"><div className="dash-filter"><Icon name="search" /><input value={q} onChange={e => { setQ(e.target.value); setPage(1); }} placeholder="Search products, vendors or categories…" /></div><span className="table-count">{filtered.length} products</span></div>
+    {loading && <div className="empty-state"><h3>Loading products…</h3></div>}
+    {!loading && (
+      <div className="dash-grid affiliate-product-grid">
+        {shown.map(p => {
+          const hasLink = linkFor(p.id);
+          return (
+            <div className="data-card" key={p.id}>
+              <div className="admin-product-main"><img src={p.image} alt="" /><div><b>{p.name}</b><small>{money(p.price)} · {p.vendor}</small></div></div>
+              <div className="affiliate-product-meta"><span>Available stock <b>{p.stock} units</b></span></div>
+              <div className="affiliate-link-actions">
+                <button className="gradient-btn" onClick={() => makeLink(p)} disabled={!!hasLink || creating === p.id}>{hasLink ? "Link created" : creating === p.id ? "Creating…" : "Create affiliate link"}</button>
+                {hasLink && <button className="outline-btn copy-link-btn" onClick={() => copyFor(p)}><Icon name="copy" size={15} />{copied === String(p.id) ? "Copied" : "Copy link"}</button>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    )}
+    {!loading && !shown.length && <div className="data-card table-empty">No products match your search.</div>}
+    <Pagination page={safePage} setPage={setPage} total={filtered.length} perPage={perPage} />
+  </>;
 }
 
-function Withdrawals(){const [wallet,setWallet]=useState(getAffiliateWallet());const [amount,setAmount]=useState(wallet.available);const [method,setMethod]=useState("MTN MoMo");const [account,setAccount]=useState("+250 788 100 005");const [msg,setMsg]=useState("");const submit=()=>{setMsg("");try{requestAffiliateWithdrawal(amount,method,account);setWallet(getAffiliateWallet());setAmount(0);setMsg(`Withdrawal request for ${money(amount)} submitted successfully.`)}catch(e){setMsg(e.message)}};return <><div className="dash-page-head"><div><span className="eyebrow">AFFILIATE PAYOUTS</span><h1>Withdrawals</h1><p>Request a payout and track the status of previous withdrawal requests.</p></div><Link className="outline-btn" to="/affiliate/wallet">View wallet</Link></div><div className="wallet-grid"><div className="data-card"><h3>Request a withdrawal</h3><p className="tiny">Available balance: <b>{money(wallet.available)}</b>. Minimum withdrawal is RWF 10,000.</p><label className="field"><span>Amount (RWF)</span><input type="number" min="10000" step="1000" value={amount} onChange={e=>setAmount(e.target.value)}/></label><label className="field"><span>Payment method</span><select value={method} onChange={e=>setMethod(e.target.value)}><option>MTN MoMo</option><option>Airtel Money</option><option>Bank account</option></select></label><label className="field"><span>Account / phone</span><input value={account} onChange={e=>setAccount(e.target.value)}/></label><button className="gradient-btn" onClick={submit} disabled={wallet.available<10000}>Submit withdrawal request</button>{msg&&<p className={msg.includes('successfully')?'success-text':'form-alert error'}>{msg}</p>}</div><div className="data-card"><h3>Payout process</h3><div className="timeline">{['Submit a withdrawal request.','MVEC validates the destination and available balance.','The payout is processed through the selected payment channel.','The request status changes to completed when the transfer is confirmed.'].map((x,i)=><div className="timeline-item done" key={x}><i/><div><b>{i+1}. {x}</b></div></div>)}</div></div></div><div className="data-card"><h3>Withdrawal history</h3><SmartTable columns={[{key:'id',label:'Request'},{key:'amount',label:'Amount',render:r=>money(r.amount)},{key:'method',label:'Method'},{key:'account',label:'Destination'},{key:'requestedAt',label:'Requested',render:r=>new Date(r.requestedAt).toLocaleDateString('en-GB')},{key:'status',label:'Status'}]} rows={wallet.withdrawals||[]} rowKey={r=>r.id} searchPlaceholder="Search withdrawals…" empty="No withdrawal requests yet." exportName="affiliate-withdrawals"/></div></>}
+function Links() {
+  const [links, setLinks] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-function Profile(){const [name,setName]=useState('Affiliate Marketer');const [phone,setPhone]=useState('+250 788 100 005');const [saved,setSaved]=useState(false);return <><div className="dash-page-head"><div><span className="eyebrow">AFFILIATE PROFILE</span><h1>Profile</h1><p>Manage your affiliate account and contact information.</p></div></div><div className="profile-grid"><div className="data-card"><div className="profile-avatar-wrap"><div className="profile-avatar">{name.charAt(0)||'A'}</div></div><h2>{name}</h2><p className="muted">Affiliate marketer · MVEC verified account</p><span className="role-chip">Affiliate</span></div><div className="data-card"><h3>Account details</h3><label className="field"><span>Full name</span><input value={name} onChange={e=>setName(e.target.value)}/></label><label className="field"><span>Phone number</span><input value={phone} onChange={e=>setPhone(e.target.value)}/></label><label className="field"><span>Email</span><input defaultValue="affiliate@mvec.rw" type="email"/></label><label className="field"><span>Preferred marketing channel</span><select defaultValue="WhatsApp"><option>WhatsApp</option><option>Facebook</option><option>Instagram</option><option>TikTok</option><option>Website</option></select></label><button className="gradient-btn" onClick={()=>setSaved(true)}>Save profile</button>{saved&&<p className="success-text">Profile updated successfully ✓</p>}</div></div></>}
-function Conversions(){const rows=[{order:'ORD-1008',product:'Wireless Headphones',sale:'RWF 68,000',commission:'RWF 1,360',status:'Completed'},{order:'ORD-1012',product:'Smart Watch Active',sale:'RWF 99,000',commission:'RWF 1,980',status:'Pending'},{order:'ORD-1019',product:'Portable Blender',sale:'RWF 42,000',commission:'RWF 840',status:'Completed'}];return <><div className="dash-page-head"><div><span className="eyebrow">CONVERSIONS</span><h1>Conversions</h1><p>Track customers and orders generated from your affiliate links.</p></div></div><div className="data-card"><SmartTable columns={[{key:'order',label:'Order'},{key:'product',label:'Product'},{key:'sale',label:'Sale'},{key:'commission',label:'Commission'},{key:'status',label:'Status'}]} rows={rows} rowKey={r=>r.order} searchPlaceholder="Search conversions…"/></div></>}
-function AffiliateDashboard(){const path=useLocation().pathname;let page=path.includes('/products')?<Products/>:path.includes('/links')?<Links/>:path.includes('/conversions')?<Conversions/>:path.includes('/earnings')?<Earnings/>:path.includes('/withdrawals')?<Withdrawals/>:path.includes('/wallet')?<Wallet/>:path.includes('/profile')?<Profile/>:<Overview/>;return <DashboardLayout>{page}</DashboardLayout>}
+  useEffect(() => {
+    affiliatesApi.getMyLinks().then(res => setLinks(res.data || [])).finally(() => setLoading(false));
+  }, []);
+
+  const rows = links.map(l => ({
+    id: l.id,
+    product: l.targetProduct?.name || "General link",
+    code: l.affiliateCode,
+    clicks: l.clickCount || 0,
+    orders: l.conversionCount || 0,
+  }));
+
+  return <>
+    <div className="dash-page-head"><div><span className="eyebrow">MY LINKS</span><h1>Affiliate links</h1><p>Track links and conversions generated from your marketing.</p></div></div>
+    <div className="data-card">
+      {loading && <div className="empty-state"><h3>Loading…</h3></div>}
+      {!loading && <SmartTable
+        columns={[
+          { key: "product", label: "Product" },
+          { key: "link", label: "Link", render: r => <small>{affiliateUrl(r.code)}</small> },
+          { key: "clicks", label: "Clicks" },
+          { key: "orders", label: "Orders" },
+        ]}
+        rows={rows}
+        rowKey={r => r.id}
+        searchPlaceholder="Search affiliate links…"
+        empty="No links yet. Create one from the Products tab."
+        exportName="affiliate-links"
+      />}
+    </div>
+  </>;
+}
+
+function Wallet() {
+  const [wallet, setWallet] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    affiliatesApi.getMyWallet().then(res => setWallet(res.data)).finally(() => setLoading(false));
+  }, []);
+
+  return <>
+    <div className="dash-page-head"><div><span className="eyebrow">AFFILIATE WALLET</span><h1>Wallet</h1><p>View your commission balance.</p></div><Link className="gradient-btn" to="/affiliate/withdrawals">Request withdrawal</Link></div>
+    {loading && <div className="empty-state"><h3>Loading…</h3></div>}
+    {!loading && <div className="metric-grid">
+      <div className="metric"><div className="metric-icon"><Icon name="chart" /></div><div><span>Total earned</span><strong>{money(wallet?.totalEarned)}</strong><small>Lifetime commission</small></div></div>
+      <div className="metric"><div className="metric-icon"><Icon name="wallet" /></div><div><span>Available balance</span><strong>{money(wallet?.availableBalance)}</strong><small>Ready for withdrawal</small></div></div>
+      <div className="metric"><div className="metric-icon"><Icon name="wallet" /></div><div><span>Pending commission</span><strong>{money(wallet?.pendingBalance)}</strong><small>Awaiting qualifying completion</small></div></div>
+    </div>}
+  </>;
+}
+
+function Withdrawals() {
+  const [wallet, setWallet] = useState(null);
+  const [history, setHistory] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [amount, setAmount] = useState("");
+  const [method, setMethod] = useState("MTN_MOMO");
+  const [phoneNumber, setPhoneNumber] = useState("");
+  const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const load = () => {
+    Promise.allSettled([affiliatesApi.getMyWallet(), affiliatesApi.getMyPayouts()]).then(([w, h]) => {
+      if (w.status === "fulfilled") setWallet(w.value.data);
+      if (h.status === "fulfilled") setHistory(h.value.data || []);
+    }).finally(() => setLoading(false));
+  };
+  useEffect(load, []);
+
+  const submit = async () => {
+    setMsg("");
+    if (!amount || !phoneNumber) { setMsg("Please enter an amount and phone number."); return; }
+    setBusy(true);
+    try {
+      const res = await affiliatesApi.requestPayout({ amount: Number(amount), paymentMethod: method, accountDetails: { phoneNumber } });
+      setMsg(`Withdrawal request for ${money(amount)} submitted successfully.`);
+      setAmount("");
+      load();
+    } catch (err) {
+      setMsg(extractErrorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return <>
+    <div className="dash-page-head"><div><span className="eyebrow">AFFILIATE PAYOUTS</span><h1>Withdrawals</h1><p>Request a payout and track the status of previous withdrawal requests.</p></div><Link className="outline-btn" to="/affiliate/wallet">View wallet</Link></div>
+    <div className="wallet-grid">
+      <div className="data-card"><h3>Request a withdrawal</h3>
+        <p className="tiny">Available balance: <b>{loading ? "…" : money(wallet?.availableBalance)}</b>. Minimum withdrawal is RWF 10,000.</p>
+        <label className="field"><span>Amount (RWF)</span><input type="number" min="10000" step="1000" value={amount} onChange={e => setAmount(e.target.value)} /></label>
+        <label className="field"><span>Payment method</span><select value={method} onChange={e => setMethod(e.target.value)}><option value="MTN_MOMO">MTN MoMo</option><option value="AIRTEL_MONEY">Airtel Money</option><option value="BANK_TRANSFER">Bank account</option></select></label>
+        <label className="field"><span>Phone number</span><input value={phoneNumber} onChange={e => setPhoneNumber(e.target.value)} placeholder="+250 788 100 005" /></label>
+        <button className="gradient-btn" onClick={submit} disabled={busy || !wallet || wallet.availableBalance < 10000}>{busy ? "Submitting…" : "Submit withdrawal request"}</button>
+        {msg && <p className={msg.includes("successfully") ? "success-text" : "form-alert error"}>{msg}</p>}
+      </div>
+      <div className="data-card"><h3>Payout process</h3><div className="timeline">{["Submit a withdrawal request.", "MVEC validates the destination and available balance.", "The payout is processed through the selected payment channel.", "The request status changes to completed when the transfer is confirmed."].map((x, i) => <div className="timeline-item done" key={x}><i /><div><b>{i + 1}. {x}</b></div></div>)}</div></div>
+    </div>
+    <div className="data-card"><h3>Withdrawal history</h3>
+      {loading && <div className="empty-state"><h3>Loading…</h3></div>}
+      {!loading && <SmartTable
+        columns={[
+          { key: "payoutNumber", label: "Request" },
+          { key: "amount", label: "Amount", render: r => money(r.amount) },
+          { key: "paymentMethod", label: "Method" },
+          { key: "createdAt", label: "Requested", render: r => new Date(r.createdAt).toLocaleDateString("en-GB") },
+          { key: "status", label: "Status" },
+        ]}
+        rows={history}
+        rowKey={r => r.id}
+        searchPlaceholder="Search withdrawals…"
+        empty="No withdrawal requests yet."
+        exportName="affiliate-withdrawals"
+      />}
+    </div>
+  </>;
+}
+
+function Profile() {
+  const { user } = useAuth();
+  return <>
+    <div className="dash-page-head"><div><span className="eyebrow">AFFILIATE PROFILE</span><h1>Profile</h1><p>Your affiliate account details.</p></div></div>
+    <div className="profile-grid">
+      <div className="data-card">
+        <div className="profile-avatar-wrap"><div className="profile-avatar">{user?.fullName?.charAt(0) || "A"}</div></div>
+        <h2>{user?.fullName || "Affiliate"}</h2>
+        <p className="muted">Affiliate marketer, MVEC account</p>
+        <span className="role-chip">Affiliate</span>
+      </div>
+      <div className="data-card"><h3>Account details</h3>
+        <label className="field"><span>Full name</span><input defaultValue={user?.fullName || ""} disabled /></label>
+        <label className="field"><span>Phone number</span><input defaultValue={user?.phone || ""} disabled /></label>
+        <label className="field"><span>Email</span><input defaultValue={user?.email || ""} disabled /></label>
+        <p className="tiny">Update your name, phone or email from your account settings.</p>
+      </div>
+    </div>
+  </>;
+}
+
+function AffiliateDashboard() {
+  const path = useLocation().pathname;
+  let page = path.includes("/products") ? <Products />
+    : path.includes("/links") ? <Links />
+    : path.includes("/withdrawals") ? <Withdrawals />
+    : path.includes("/wallet") ? <Wallet />
+    : path.includes("/profile") ? <Profile />
+    : <Overview />;
+  return <DashboardLayout>{page}</DashboardLayout>;
+}
 export default AffiliateDashboard;

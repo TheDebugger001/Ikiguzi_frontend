@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { authApi } from '../API/auth';
+import { disconnectSocket } from '../services/socket';
 
 const AuthContext = createContext(null);
 
@@ -44,12 +45,9 @@ export function AuthProvider({ children }) {
     return data.user;
   }
 
-  async function resetPassword(email) {
-    return authApi.forgotPassword({ email });
-  }
-
   function logout() {
     localStorage.removeItem('huska_token');
+    disconnectSocket();
     setUser(null);
   }
 
@@ -58,7 +56,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, resetPassword, logout, refresh, setUser }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout, refresh, setUser }}>
       {children}
     </AuthContext.Provider>
   );

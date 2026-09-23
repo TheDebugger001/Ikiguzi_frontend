@@ -29,4 +29,16 @@ export const adminApi = {
     client.patch(`/admin/suppliers/${id}/verify`).then((r) => r.data),
   updateSupplierStatus: (id, payload) =>
     client.patch(`/admin/suppliers/${id}/status`, payload).then((r) => r.data),
+  getUsers: (params) =>
+    client.get("/users", { params }).then((r) => r.data),
+  getProducts: (params) =>
+    client.get("/admin/products", { params }).then((r) => r.data),
+  getOrders: (params) =>
+    client.get("/admin/orders", { params }).then((r) => r.data),
+  updateUserStatus: (id, payload) =>
+    client.patch(`/users/${id}/status`, payload).then((r) => r.data),
+  getOverview: () =>
+    client.get("/admin/overview").then((r) => r.data),
+  getPayments: (params) =>
+    client.get("/admin/payments", { params }).then((r) => r.data),
 };

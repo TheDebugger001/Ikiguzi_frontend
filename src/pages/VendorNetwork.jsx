@@ -1,39 +1,82 @@
-import {useMemo,useState} from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import DashboardLayout from "../components/DashboardLayout";
 import Icon from "../components/Icon";
 import Pagination from "../components/Pagination";
-import {createOrder,confirmPayment,addNotification} from "../services/mvecStore";
+import { suppliersApi } from "../API/suppliers";
+import { conversationsApi } from "../API/conversations";
+import { extractErrorMessage } from "../API/client";
 
-const suppliers=[
- {name:"Rwanda Wholesale Suppliers",category:"Electronics",rating:4.8,products:126,moq:10,location:"Kigali",verified:true},
- {name:"East Africa Fashion Supply",category:"Fashion",rating:4.7,products:84,moq:5,location:"Kigali",verified:true},
- {name:"Kigali General Suppliers",category:"General",rating:4.5,products:53,moq:20,location:"Gasabo",verified:false},
- {name:"Great Lakes Home Supply",category:"Home & Living",rating:4.6,products:72,moq:8,location:"Kicukiro",verified:true},
- {name:"Rwanda Sports Wholesale",category:"Sports & Fitness",rating:4.7,products:61,moq:12,location:"Nyarugenge",verified:true},
- {name:"AutoSource Rwanda",category:"Automotive",rating:4.4,products:49,moq:6,location:"Kigali",verified:true},
- {name:"AgriTrade Rwanda",category:"Agriculture",rating:4.6,products:93,moq:25,location:"Musanze",verified:true},
- {name:"Kivu Beauty Distribution",category:"Beauty",rating:4.5,products:57,moq:10,location:"Rubavu",verified:true},
- {name:"Rwanda Office & Stationery",category:"Office Supplies",rating:4.3,products:68,moq:15,location:"Kigali",verified:false}
-];
+export default function VendorNetwork() {
+  const navigate = useNavigate();
+  const [suppliers, setSuppliers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [q, setQ] = useState("");
+  const [page, setPage] = useState(1);
+  const [contacting, setContacting] = useState("");
+  const perPage = 6;
 
-export default function VendorNetwork(){
- const [q,setQ]=useState("");const [page,setPage]=useState(1);const [message,setMessage]=useState("");const perPage=6;
- const filtered=useMemo(()=>suppliers.filter(s=>`${s.name} ${s.category} ${s.location}`.toLowerCase().includes(q.trim().toLowerCase())),[q]);
- const safePage=Math.min(page,Math.max(1,Math.ceil(filtered.length/perPage)));
- const rows=filtered.slice((safePage-1)*perPage,safePage*perPage);
- const search=e=>{setQ(e.target.value);setPage(1)};
- const placeOrder=s=>{
-  const total=220000;
-  const order=createOrder({buyer:"Kigali Tech Store",buyerPhone:"+250 788 100 002",vendor:"Kigali Tech Store",supplier:s.name,orderType:"supplier",items:[{productId:`SUP-${s.products}`,name:`${s.category} wholesale order`,qty:s.moq,price:Math.round(total/s.moq)}],subtotal:total,shipping:0,total,address:"Kigali",deliveryMethod:"B2B",commission:0});
-  confirmPayment(order.id,"momo");
-  addNotification({role:"supplier",recipient:s.name,type:"payment",title:"Vendor order paid successfully",message:`Kigali Tech Store paid ${order.id}. The full supplier amount is protected pending supply delivery and receipt confirmation.`,reference:order.id});
-  setMessage(`Paid B2B order ${order.id} created. ${s.name} has been notified.`);
- };
- return <DashboardLayout><div className="dash-page-head"><div><span className="eyebrow">B2B MARKETPLACE</span><h1>Find suppliers</h1><p>Buy wholesale products from verified suppliers and grow your store.</p></div></div>
- <div className="dash-toolbar"><div className="dash-filter"><Icon name="search"/><input value={q} onChange={search} placeholder="Search suppliers, categories or location…"/></div><span className="table-count">{filtered.length} supplier{filtered.length===1?'':'s'}</span></div>
- {message&&<div className="success-text">{message}</div>}
- <div className="dash-grid supplier-search-grid">{rows.map(s=><div className="data-card" key={s.name}><div className="data-card-head"><div><h3>{s.name}</h3><span>{s.category} · {s.location}</span></div>{s.verified&&<em className="status active">Verified ✓</em>}</div><div className="profile-detail"><span>Rating: <b>{s.rating}/5</b></span><span>Wholesale products: <b>{s.products}</b></span><span>Minimum order: <b>{s.moq} units</b></span></div><button className="gradient-btn" onClick={()=>placeOrder(s)}>Place B2B order & pay</button></div>)}</div>
- {!rows.length&&<div className="data-card table-empty">No suppliers match your search.</div>}
- <Pagination page={safePage} setPage={setPage} total={filtered.length} perPage={perPage}/>
- <div className="verified-box"><b>✓ B2B trust</b><p>MVEC verifies suppliers and tracks orders, delivery proof and disputes. Supplier transactions carry no MVEC commission; the full supplier amount remains protected until supply delivery and receipt are confirmed.</p></div></DashboardLayout>
+  useEffect(() => {
+    suppliersApi.getAll({ pageSize: 100 })
+      .then(res => setSuppliers(res.data || []))
+      .catch(err => setError(extractErrorMessage(err)))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const filtered = useMemo(
+    () => suppliers.filter(s => `${s.businessName} ${s.locationId || ""}`.toLowerCase().includes(q.trim().toLowerCase())),
+    [suppliers, q],
+  );
+  const safePage = Math.min(page, Math.max(1, Math.ceil(filtered.length / perPage)));
+  const rows = filtered.slice((safePage - 1) * perPage, safePage * perPage);
+
+  const contactSupplier = async (s) => {
+    setError("");
+    setContacting(s.id);
+    try {
+      await conversationsApi.create({ recipientId: s.userId });
+      navigate("/vendor/messages");
+    } catch (err) {
+      setError(extractErrorMessage(err));
+    } finally {
+      setContacting("");
+    }
+  };
+
+  return (
+    <DashboardLayout>
+      <div className="dash-page-head">
+        <div><span className="eyebrow">B2B MARKETPLACE</span><h1>Find suppliers</h1><p>Discover verified suppliers on MVEC and start a conversation to source wholesale stock.</p></div>
+      </div>
+      <div className="dash-toolbar">
+        <div className="dash-filter"><Icon name="search" /><input value={q} onChange={e => { setQ(e.target.value); setPage(1); }} placeholder="Search suppliers or location…" /></div>
+        <span className="table-count">{filtered.length} supplier{filtered.length === 1 ? "" : "s"}</span>
+      </div>
+      {error && <div className="form-error">{error}</div>}
+      {loading && <div className="empty-state"><h3>Loading suppliers…</h3></div>}
+      {!loading && rows.length === 0 && <div className="data-card table-empty">No suppliers match your search yet.</div>}
+      {!loading && rows.length > 0 && (
+        <div className="dash-grid supplier-search-grid">
+          {rows.map(s => (
+            <div className="data-card" key={s.id}>
+              <div className="data-card-head">
+                <div><h3>{s.businessName}</h3><span>{s.locationId || "Rwanda"}</span></div>
+                {s.verificationStatus === "VERIFIED" && <em className="status active">Verified ✓</em>}
+              </div>
+              <div className="profile-detail">
+                <span>Rating: <b>{Number(s.ratingAvg || 0).toFixed(1)}/5</b></span>
+                <span>Contact: <b>{s.phone}</b></span>
+              </div>
+              <button className="gradient-btn" onClick={() => contactSupplier(s)} disabled={contacting === s.id}>
+                {contacting === s.id ? "Starting chat…" : "Message supplier"}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      <Pagination page={safePage} setPage={setPage} total={filtered.length} perPage={perPage} />
+      <div className="verified-box"><b>✓ B2B trust</b><p>MVEC verifies suppliers and tracks messages, orders, delivery proof and disputes. Message a supplier to discuss stock, pricing and minimum order quantities before placing a wholesale order.</p></div>
+    </DashboardLayout>
+  );
 }

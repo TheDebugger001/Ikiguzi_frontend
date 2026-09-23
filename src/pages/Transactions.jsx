@@ -1,13 +1,72 @@
-import {useMemo} from 'react';
-import {Link,useLocation} from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import Icon from '../components/Icon';
 import SmartTable from '../components/SmartTable';
-import {demoOrders} from '../data';
-const money=n=>new Intl.NumberFormat('en-RW').format(Number(n)||0)+' RWF';
-const extra=[{id:'TXN-9001',order:'MVEC-10447',buyer:'Alice N.',method:'MTN MoMo',amount:156000,status:'SUCCESS',date:'27/08/2026 09:42'},{id:'TXN-9002',order:'MVEC-10446',buyer:'Patrick N.',method:'Airtel Money',amount:98000,status:'PENDING',date:'27/08/2026 08:15'},{id:'TXN-9003',order:'MVEC-10445',buyer:'Claudine M.',method:'Visa •••• 4242',amount:147000,status:'FAILED',date:'26/08/2026 18:03'}];
-export default function Transactions(){
- const location=useLocation();const isAdmin=location.pathname.startsWith('/admin');
- const rows=useMemo(()=>[...extra,...demoOrders.map((o,i)=>({id:'TXN-'+(9010+i),order:o.id,buyer:o.buyer,method:i%2?'Visa •••• 4242':'MTN MoMo',amount:o.total,status:o.payment,date:(o.date||'31/08/2026')+' 12:00'}))],[]);
- return <DashboardLayout admin={isAdmin}><div className="dash-page-head"><div><span className="eyebrow">FINANCE</span><h1>Transactions</h1><p>All marketplace payment transactions and their current state.</p></div></div><div className="metric-grid"><div className="metric"><div className="metric-icon"><Icon name="wallet"/></div><div><span>Total volume</span><strong>{money(rows.reduce((s,r)=>s+Number(r.amount||0),0))}</strong><small>Across all transactions</small></div></div><div className="metric"><div className="metric-icon"><Icon name="chart"/></div><div><span>Successful</span><strong>{money(rows.filter(r=>r.status==='SUCCESS').reduce((s,r)=>s+Number(r.amount||0),0))}</strong><small>Confirmed payments</small></div></div><div className="metric"><div className="metric-icon"><Icon name="cart"/></div><div><span>Pending</span><strong>{money(rows.filter(r=>r.status==='PENDING').reduce((s,r)=>s+Number(r.amount||0),0))}</strong><small>Awaiting confirmation</small></div></div><div className="metric"><div className="metric-icon"><Icon name="shield"/></div><div><span>Failed</span><strong>{rows.filter(r=>r.status==='FAILED').length}</strong><small>Needs attention</small></div></div></div><div className="data-card"><SmartTable columns={[{key:'id',label:'Transaction'},{key:'order',label:'Order',render:r=><Link to={(isAdmin?'/admin/orders/':'/vendor/orders/')+r.order}>{r.order}</Link>},{key:'buyer',label:'Customer'},{key:'method',label:'Method'},{key:'amount',label:'Amount',render:r=>money(r.amount)},{key:'status',label:'Status',render:r=><em className={`status ${r.status==='SUCCESS'?'active':r.status==='FAILED'?'danger':'warning'}`}>{r.status}</em>},{key:'date',label:'Date'}]} rows={rows} rowKey={r=>r.id} searchPlaceholder="Search transaction, order or customer…" exportName={isAdmin?'admin-transactions':'vendor-transactions'} actions={r=><Link className="table-action-btn" to={(isAdmin?'/admin/orders/':'/vendor/orders/')+r.order}>View</Link>}/></div></DashboardLayout>
+import { adminApi } from '../API/admin';
+import { extractErrorMessage } from '../API/client';
+
+const money = n => new Intl.NumberFormat('en-RW').format(Number(n) || 0) + ' RWF';
+
+export default function Transactions() {
+  const [payments, setPayments] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    adminApi.getPayments({ pageSize: 100 })
+      .then(res => setPayments(res.data || []))
+      .catch(err => setError(extractErrorMessage(err)))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const rows = payments.map(p => ({
+    id: p.id,
+    reference: p.transactionReference,
+    order: p.parentOrder?.orderNumber || p.parentOrderId,
+    buyer: p.parentOrder?.user?.fullName || 'Unknown buyer',
+    method: p.method,
+    amount: p.amount,
+    status: p.status,
+    date: new Date(p.createdAt).toLocaleString('en-GB'),
+  }));
+
+  const totalVolume = rows.reduce((s, r) => s + Number(r.amount || 0), 0);
+  const successVolume = rows.filter(r => r.status === 'SUCCESS').reduce((s, r) => s + Number(r.amount || 0), 0);
+  const pendingVolume = rows.filter(r => r.status === 'PENDING').reduce((s, r) => s + Number(r.amount || 0), 0);
+  const failedCount = rows.filter(r => r.status === 'FAILED').length;
+
+  return (
+    <DashboardLayout admin>
+      <div className="dash-page-head">
+        <div><span className="eyebrow">FINANCE</span><h1>Transactions</h1><p>All marketplace payment transactions and their current state.</p></div>
+      </div>
+      {error && <div className="form-error">{error}</div>}
+      <div className="metric-grid">
+        <div className="metric"><div className="metric-icon"><Icon name="wallet" /></div><div><span>Total volume</span><strong>{loading ? '...' : money(totalVolume)}</strong><small>Across all transactions</small></div></div>
+        <div className="metric"><div className="metric-icon"><Icon name="chart" /></div><div><span>Successful</span><strong>{loading ? '...' : money(successVolume)}</strong><small>Confirmed payments</small></div></div>
+        <div className="metric"><div className="metric-icon"><Icon name="cart" /></div><div><span>Pending</span><strong>{loading ? '...' : money(pendingVolume)}</strong><small>Awaiting confirmation</small></div></div>
+        <div className="metric"><div className="metric-icon"><Icon name="shield" /></div><div><span>Failed</span><strong>{loading ? '...' : failedCount}</strong><small>Needs attention</small></div></div>
+      </div>
+      <div className="data-card">
+        {loading && <div className="empty-state"><h3>Loading transactions…</h3></div>}
+        {!loading && rows.length === 0 && <div className="empty-state"><h3>No transactions yet</h3><p>Payment attempts will appear here as buyers check out.</p></div>}
+        {!loading && rows.length > 0 && <SmartTable
+          columns={[
+            { key: 'reference', label: 'Reference' },
+            { key: 'order', label: 'Order', render: r => <Link to={`/admin/orders/${r.order}`}>{r.order}</Link> },
+            { key: 'buyer', label: 'Customer' },
+            { key: 'method', label: 'Method' },
+            { key: 'amount', label: 'Amount', render: r => money(r.amount) },
+            { key: 'status', label: 'Status', render: r => <em className={`status ${r.status === 'SUCCESS' ? 'active' : r.status === 'FAILED' ? 'danger' : 'warning'}`}>{r.status}</em> },
+            { key: 'date', label: 'Date' },
+          ]}
+          rows={rows}
+          rowKey={r => r.id}
+          searchPlaceholder="Search transaction, order or customer…"
+          exportName="admin-transactions"
+        />}
+      </div>
+    </DashboardLayout>
+  );
 }

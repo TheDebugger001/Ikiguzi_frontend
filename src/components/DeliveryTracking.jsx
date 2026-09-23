@@ -1,19 +1,105 @@
-import {useEffect,useMemo,useState} from "react";
+import { useEffect, useMemo, useState } from "react";
 import Icon from "./Icon";
-import {getOrders,getDeliveryRemaining,syncOrderLifecycle} from "../services/mvecStore";
 import Pagination from "./Pagination";
-const money=n=>new Intl.NumberFormat("en-RW").format(Number(n)||0)+" RWF";
-const steps=["Order placed","Payment confirmed","Preparing","Shipped","In transit","Out for delivery","Delivered"];
-const fmt=ms=>{const s=Math.max(0,Math.floor(ms/1000));const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sec=s%60;return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`};
-export default function DeliveryTracking({role="vendor"}){
- const [orders,setOrders]=useState(()=>getOrders().filter(o=>o.payment==="SUCCESS"));const [q,setQ]=useState("");const [page,setPage]=useState(1);const [tick,setTick]=useState(0);const perPage=5;
- useEffect(()=>{const timer=setInterval(()=>{syncOrderLifecycle();setOrders(getOrders().filter(o=>o.payment==="SUCCESS"));setTick(x=>x+1)},1000);return()=>clearInterval(timer)},[]);
- const roleOrders=role==="supplier"?orders.filter(o=>o.supplier||o.id.startsWith("B2B")):role==="vendor"?orders.filter(o=>o.vendor):role==="affiliate"?orders.filter(o=>o.affiliateCode):orders;
- const filtered=useMemo(()=>roleOrders.filter(o=>JSON.stringify(o).toLowerCase().includes(q.toLowerCase())),[roleOrders,q,tick]);const shown=filtered.slice((page-1)*perPage,page*perPage);
- return <><div className="dash-page-head"><div><span className="eyebrow">DELIVERY & SETTLEMENT</span><h1>{role==='admin'?'All deliveries':'Delivery tracking'}</h1><p>Track delivery progress, the protected amount and the final delivery confirmation.</p></div></div>
- <div className="verified-box settlement-banner"><b>🔒 Protected funds</b><p>Paid orders are recorded as <strong>HELD by MVEC</strong> until the buyer's delivery OTP is verified. After successful verification, the protected amount is released according to the settlement rules.</p></div>
- <div className="dash-toolbar"><div className="dash-filter"><Icon name="search"/><input value={q} onChange={e=>{setQ(e.target.value);setPage(1)}} placeholder="Search order, product, customer, vendor or tracking number…"/></div></div>
- <div className="data-card"><div className="data-card-head"><div><h3>Delivery operations</h3><span>{filtered.length} paid orders</span></div></div>
- {shown.map(o=>{const current=o.deliveryStatus||o.status||"Order placed";const idx=Math.max(0,steps.findIndex(s=>s.toLowerCase()===String(current).toLowerCase()));const remaining=getDeliveryRemaining(o);return <div className="delivery-track-card" key={o.id}><div className="delivery-track-head"><div><b>{o.id}</b><small>{o.items?.[0]?.name||o.productName||"Order"} · {o.trackingNumber}</small><small>{o.buyer||"Buyer"} · {o.vendor||"Marketplace seller"}</small></div><div className="settlement-chip"><span className={o.settlementStatus==='RELEASED'?'released':'held'}>{o.settlementStatus==='RELEASED'?'Funds released':'Funds held by MVEC'}</span><strong>{money(o.heldAmount||o.total)}</strong></div></div><div className="delivery-steps">{steps.map((s,i)=><div className={i<=idx?'step done':'step'} key={s}><i>{i<idx?'✓':i===idx?'●':''}</i><small>{s}</small></div>)}</div><div className="delivery-track-actions"><span>Payment: <b>{o.payment}</b></span><span>Time left: <b>{o.settlementStatus==='HELD'?fmt(remaining):'Completed'}</b></span><span>OTP: <b>{o.deliveryOtpVerified?'Verified ✓':'Awaiting delivery verification'}</b></span><span>Funds: <b>{o.settlementStatus==='HELD'?'Held by MVEC':'Released'}</b></span></div>{o.settlementStatus==='HELD'&&<p className="tiny delivery-note">The delivery person must obtain the buyer's OTP at the door. The correct OTP confirms delivery for both sides and triggers the settlement release.</p>}{o.refundStatus==='FULL'&&<p className="form-alert error">Order cancelled after the delivery window expired. Full refund recorded.</p>}</div>})}
- {!shown.length&&<div className="empty-state"><h3>No paid deliveries</h3><p>Paid orders will appear here automatically.</p></div>}<Pagination page={Math.min(page,Math.max(1,Math.ceil(filtered.length/perPage)))} setPage={setPage} total={filtered.length} perPage={perPage}/></div></>;
+import { ordersApi } from "../API/orders";
+import { extractErrorMessage } from "../API/client";
+
+const money = (n) => new Intl.NumberFormat("en-RW").format(Number(n) || 0) + " RWF";
+const STEPS = ["PENDING", "CONFIRMED", "PROCESSING", "READY_FOR_SHIPMENT", "SHIPPED", "DELIVERED"];
+
+export default function DeliveryTracking({ role = "vendor" }) {
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [q, setQ] = useState("");
+  const [page, setPage] = useState(1);
+  const [otpInputs, setOtpInputs] = useState({});
+  const [busyId, setBusyId] = useState(null);
+  const [feedback, setFeedback] = useState({});
+  const perPage = 5;
+
+  const load = () => {
+    ordersApi.getDeliverable()
+      .then((res) => setOrders(res.orders || []))
+      .catch((err) => setError(extractErrorMessage(err)))
+      .finally(() => setLoading(false));
+  };
+  useEffect(() => { load(); }, []);
+
+  const filtered = useMemo(
+    () => orders.filter((o) => JSON.stringify(o).toLowerCase().includes(q.toLowerCase())),
+    [orders, q],
+  );
+  const shown = filtered.slice((page - 1) * perPage, page * perPage);
+
+  const verify = async (orderId) => {
+    const otp = (otpInputs[orderId] || "").trim();
+    if (otp.length !== 6) return;
+    setBusyId(orderId);
+    setFeedback((f) => ({ ...f, [orderId]: "" }));
+    try {
+      await ordersApi.confirmDelivery(orderId, otp);
+      setFeedback((f) => ({ ...f, [orderId]: "success:Delivery confirmed. Funds released." }));
+      setOrders((prev) => prev.filter((o) => o.id !== orderId));
+    } catch (err) {
+      setFeedback((f) => ({ ...f, [orderId]: `error:${extractErrorMessage(err)}` }));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  if (loading) return <div className="empty-state"><h3>Loading deliveries…</h3></div>;
+
+  return <>
+    <div className="dash-page-head">
+      <div><span className="eyebrow">DELIVERY & SETTLEMENT</span><h1>{role === "admin" ? "All deliveries" : "Delivery tracking"}</h1><p>Track delivery progress, the protected amount and the final delivery confirmation.</p></div>
+    </div>
+    <div className="verified-box settlement-banner"><b>🔒 Protected funds</b><p>Paid orders are recorded as <strong>HELD by MVEC</strong> until the buyer's delivery OTP is verified. After successful verification, the protected amount is released to the seller.</p></div>
+    {error && <div className="form-error">{error}</div>}
+    <div className="dash-toolbar"><div className="dash-filter"><Icon name="search" /><input value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} placeholder="Search order, buyer or vendor…" /></div></div>
+    <div className="data-card">
+      <div className="data-card-head"><div><h3>Delivery operations</h3><span>{filtered.length} paid orders awaiting delivery</span></div></div>
+
+      {shown.length === 0 && <div className="empty-state"><h3>No deliveries pending</h3><p>Paid orders awaiting delivery confirmation will appear here.</p></div>}
+
+      {shown.map((o) => {
+        const idx = Math.max(0, STEPS.indexOf(o.orderStatus));
+        const vendorName = o.items?.[0]?.vendor?.companyName || o.items?.[0]?.vendor?.fullName || "Marketplace seller";
+        const msg = feedback[o.id] || "";
+        const [msgType, msgText] = msg.includes(":") ? msg.split(/:(.*)/s) : ["", msg];
+        return (
+          <div className="delivery-track-card" key={o.id}>
+            <div className="delivery-track-head">
+              <div><b>{o.orderNumber}</b><small>{o.items?.[0]?.name || "Order"}</small><small>{o.user?.fullName || "Buyer"} · {vendorName}</small></div>
+              <div className="settlement-chip"><span className="held">Funds held by MVEC</span><strong>{money(o.totalAmount)}</strong></div>
+            </div>
+            <div className="delivery-steps">
+              {STEPS.map((s, i) => <div className={i <= idx ? "step done" : "step"} key={s}><i>{i < idx ? "✓" : i === idx ? "●" : ""}</i><small>{s}</small></div>)}
+            </div>
+            <div className="delivery-track-actions">
+              <span>Buyer phone: <b>{o.user?.phone || "N/A"}</b></span>
+              <span>Status: <b>{o.orderStatus}</b></span>
+            </div>
+            <div className="delivery-otp-verify">
+              <input
+                inputMode="numeric"
+                maxLength="6"
+                value={otpInputs[o.id] || ""}
+                onChange={(e) => setOtpInputs((s) => ({ ...s, [o.id]: e.target.value.replace(/\D/g, "").slice(0, 6) }))}
+                placeholder="Enter buyer's 6-digit OTP"
+                className="inline-table-input"
+              />
+              <button className="gradient-btn compact-btn" onClick={() => verify(o.id)} disabled={(otpInputs[o.id] || "").length !== 6 || busyId === o.id}>
+                {busyId === o.id ? "Verifying…" : "Confirm delivery"}
+              </button>
+            </div>
+            {msgText && <small className={msgType === "success" ? "success-text" : "form-alert error"}>{msgText}</small>}
+            <p className="tiny delivery-note">Ask the buyer for the OTP shown on their order details page. The correct code confirms delivery and releases the held funds to the seller.</p>
+          </div>
+        );
+      })}
+
+      <Pagination page={Math.min(page, Math.max(1, Math.ceil(filtered.length / perPage)))} setPage={setPage} total={filtered.length} perPage={perPage} />
+    </div>
+  </>;
 }

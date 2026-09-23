@@ -1,6 +1,8 @@
 import { client } from "./client";
 
 export const wholesaleApi = {
+  getMine: () =>
+    client.get("/wholesale/orders/mine").then((r) => r.data),
   createOrder: (payload) =>
     client.post("/wholesale/orders", payload).then((r) => r.data),
   holdEscrow: (orderId, payload) =>

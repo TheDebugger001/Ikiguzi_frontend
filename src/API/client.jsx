@@ -1,7 +1,7 @@
 import axios from "axios";
 
 const BASE_URL =
-  import.meta.env.VITE_API_URL || "http://localhost:4000/api";
+  import.meta.env.VITE_API_URL || "http://192.168.1.71:4000/api";
 
 export const client = axios.create({ baseURL: BASE_URL });
 
@@ -42,6 +42,7 @@ export function mapUser(u) {
     gender: u.gender || "other",
     role: u.role || "buyer",
     companyName: u.companyName || "",
+    isSellerEnabled: Boolean(u.isSellerEnabled),
   };
 }
 

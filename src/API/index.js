@@ -18,4 +18,6 @@ export { wholesaleApi } from "./wholesale";
 export { adminApi } from "./admin";
 export { addressesApi } from "./addresses";
 export { affiliatesApi } from "./affiliates";
+export { notificationsApi } from "./notifications";
+export { reviewsApi } from "./reviews";
 export { client, extractErrorMessage, mapUser, mapAuthResponse } from "./client";

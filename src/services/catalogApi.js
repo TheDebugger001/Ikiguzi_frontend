@@ -18,36 +18,32 @@ export function mapBackendProduct(p) {
   const rawPrice = Number(p.price || 0);
   const discountPrice = Number(p.discountPrice || 0);
   const activePrice = discountPrice > 0 && discountPrice < rawPrice ? discountPrice : rawPrice;
-  const mainImage =
-    p.media?.mainImage ||
-    (Array.isArray(p.media) ? p.media[0] : null) ||
-    p.image ||
-    PLACEHOLDER_IMG;
-  const attrs = p.attributes || {};
+  const mainImage = p.mainImage || (Array.isArray(p.gallery) ? p.gallery[0] : null) || PLACEHOLDER_IMG;
   return {
-    id: p._id || p.id || p.publicId,
+    id: p.id || p.publicId,
     name: p.name || '',
     category: category.name || (typeof p.category === 'string' ? p.category : 'Uncategorized'),
     brand: p.brand || '',
-    vendor: vendor.companyName || vendor.Fullname || p.vendorName || 'MVEC Seller',
-    vendorId: vendor._id || p.vendor || '',
+    vendor: vendor.companyName || vendor.fullName || 'MVEC Seller',
+    vendorId: vendor.id || p.vendorId || '',
     price: activePrice,
     oldPrice: discountPrice > 0 && discountPrice < rawPrice ? rawPrice : 0,
-    rating: p.averageRating || p.rating || 4,
-    reviews: p.reviewCount || p.reviews || 0,
+    rating: Number(p.averageRating) || 0,
+    reviews: Number(p.reviewCount) || 0,
     stock: Number(p.stockQuantity || 0),
     sku: p.sku || '',
     image: mainImage,
+    gallery: Array.isArray(p.gallery) ? p.gallery : [],
     description: p.description || p.shortDescription || '',
     status: p.status || 'ACTIVE',
     slug: p.slug || '',
     attributes: {
-      Color: attrs.color || '',
-      Size: attrs.size || '',
-      Material: attrs.material || '',
-      Weight: attrs.weight || '',
-      Capacity: attrs.capacity || '',
-      Model: attrs.model || '',
+      Color: p.color || '',
+      Size: p.size || '',
+      Material: p.material || '',
+      Weight: p.weight || '',
+      Capacity: p.capacity || '',
+      Model: p.model || '',
     },
   };
 }
@@ -55,11 +51,11 @@ export function mapBackendProduct(p) {
 export function mapBackendVendor(v) {
   if (!v) return null;
   return {
-    id: v._id || v.id || v.user,
-    name: v.businessName || v.companyName || v.Fullname || v.name || 'Vendor',
-    category: v.businessCategory || v.vendorCategory || v.category || 'General',
-    products: v.productCount || v.products || 0,
-    rating: v.ratingAvg || v.rating || v.averageRating || 0,
+    id: v.id || v.userId,
+    name: v.businessName || 'Vendor',
+    category: 'Marketplace vendor',
+    products: 0,
+    rating: Number(v.ratingAvg) || 0,
     slug: v.slug || '',
     logoUrl: v.logoUrl || '',
     bannerUrl: v.bannerUrl || '',
@@ -70,7 +66,7 @@ export function mapBackendVendor(v) {
 export function mapBackendCategory(c) {
   if (!c) return null;
   return {
-    id: c._id || c.id,
+    id: c.id,
     name: c.name || '',
     slug: c.slug || '',
     imageUrl: c.imageUrl || '',
@@ -80,9 +76,9 @@ export function mapBackendCategory(c) {
 
 const toCache = (result) => ({
   ...result,
-  products: result.backendProducts && result.backendProducts.length ? result.backendProducts : mockProducts,
-  categories: result.backendCategories && result.backendCategories.length ? result.backendCategories : mockCategories,
-  vendors: result.backendVendors && result.backendVendors.length ? result.backendVendors : mockVendors,
+  products: result.backendProducts || [],
+  categories: result.backendCategories || [],
+  vendors: result.backendVendors || [],
 });
 
 export function loadCatalog(force = false) {

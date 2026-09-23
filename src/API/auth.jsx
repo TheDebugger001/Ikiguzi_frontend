@@ -30,8 +30,8 @@ export const authApi = {
     client.post("/auth/change-password", payload).then((r) => r.data),
   forgotPassword: (payload) =>
     client.post("/auth/forgot-password", payload).then((r) => r.data),
-  checkCode: (payload) =>
-    client.post("/auth/check-code", payload).then((r) => r.data),
-  resetPassword: (token, payload) =>
-    client.post(`/auth/reset-password/${token}`, payload).then((r) => r.data),
+  verifyResetOtp: (payload) =>
+    client.post("/auth/verify-reset-otp", payload).then((r) => r.data),
+  resetPassword: (resetToken, newPassword) =>
+    client.post("/auth/reset-password", { resetToken, newPassword }).then((r) => r.data),
 };

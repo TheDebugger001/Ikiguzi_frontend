@@ -2,36 +2,44 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import AuthLayout from '../components/AuthLayout';
 import FormField from '../components/FormField';
-import { useAuth } from '../context/AuthContext';
+import { authApi } from '../API/auth';
+import { extractErrorMessage } from '../API/client';
 
 export default function ForgotPassword() {
-  const { resetPassword } = useAuth();
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
   const [email, setEmail] = useState('');
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
-  const [generatedOtp, setGeneratedOtp] = useState('');
+  const [resetToken, setResetToken] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [devCode, setDevCode] = useState('');
 
-  const sendOtp = (e) => {
+  const sendOtp = async (e) => {
     e.preventDefault();
     setError('');
     setMessage('');
 
     if (!email.trim()) {
-      setError('Please enter the phone number or email linked to your MVEC account.');
+      setError('Please enter the email linked to your MVEC account.');
       return;
     }
 
-    // Local development fallback. Production verification must come from the authentication API.
-    const demoOtp = String(Math.floor(100000 + Math.random() * 900000));
-    setGeneratedOtp(demoOtp);
-    setOtp(['', '', '', '', '', '']);
-    setStep(2);
-    setMessage(`A verification code has been prepared for ${email}.`);
+    setBusy(true);
+    try {
+      const res = await authApi.forgotPassword({ email: email.trim() });
+      setDevCode(res.devCode || '');
+      setOtp(['', '', '', '', '', '']);
+      setStep(2);
+      setMessage(`If an account exists for ${email.trim()}, a verification code has been emailed to it.`);
+    } catch (err) {
+      setError(extractErrorMessage(err));
+    } finally {
+      setBusy(false);
+    }
   };
 
   const handleOtpChange = (index, value) => {
@@ -51,24 +59,31 @@ export default function ForgotPassword() {
     }
   };
 
-  const verifyOtp = (e) => {
+  const verifyOtp = async (e) => {
     e.preventDefault();
     setError('');
     setMessage('');
 
     const entered = otp.join('');
-
     if (entered.length !== 6) {
-      setError('Enter the complete 6-digit OTP.');
+      setError('Enter the complete 6-digit code.');
       return;
     }
 
-    if (entered !== generatedOtp) {
-      setError('That OTP is incorrect. Please check the code sent to your Gmail.');
-      return;
+    setBusy(true);
+    try {
+      const res = await authApi.verifyResetOtp({ email: email.trim(), code: entered });
+      setResetToken(res.resetToken);
+      setStep(3);
+      setMessage('Code verified. Choose your new password.');
+    } catch (err) {
+      // Wrong or expired code: stay on this step so the person can try again.
+      setError(extractErrorMessage(err) || 'That code is incorrect. Please try again.');
+      setOtp(['', '', '', '', '', '']);
+      document.getElementById('otp-0')?.focus();
+    } finally {
+      setBusy(false);
     }
-
-    setStep(3);
   };
 
   const resetPasswordForm = async (e) => {
@@ -76,28 +91,41 @@ export default function ForgotPassword() {
     setError('');
     setMessage('');
 
-    if (password.length < 8) {
-      setError('Your new password must contain at least 8 characters.');
+    if (password.length < 6) {
+      setError('Your new password must contain at least 6 characters.');
       return;
     }
-
     if (password !== confirmPassword) {
       setError('The passwords do not match.');
       return;
     }
 
-    try { await resetPassword(email.trim(), password); } catch (err) { setError(err.message); return; }
-    setMessage('Password reset complete. You can now log in with your new password.');
-    setTimeout(() => navigate('/login'), 1600);
+    setBusy(true);
+    try {
+      await authApi.resetPassword(resetToken, password);
+      setMessage('Password reset complete. You can now log in with your new password.');
+      setTimeout(() => navigate('/login'), 1600);
+    } catch (err) {
+      setError(extractErrorMessage(err));
+    } finally {
+      setBusy(false);
+    }
   };
 
-  const resendOtp = () => {
-    const demoOtp = String(Math.floor(100000 + Math.random() * 900000));
-    setGeneratedOtp(demoOtp);
-    setOtp(['', '', '', '', '', '']);
+  const resendOtp = async () => {
     setError('');
-    setMessage(`A new verification code has been prepared for ${email}.`);
-    document.getElementById('otp-0')?.focus();
+    setBusy(true);
+    try {
+      const res = await authApi.forgotPassword({ email: email.trim() });
+      setDevCode(res.devCode || '');
+      setOtp(['', '', '', '', '', '']);
+      setMessage(`A new verification code has been emailed to ${email.trim()}.`);
+      document.getElementById('otp-0')?.focus();
+    } catch (err) {
+      setError(extractErrorMessage(err));
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -111,9 +139,9 @@ export default function ForgotPassword() {
       }
       subtitle={
         step === 1
-          ? 'Enter your phone number or email to reset your MVEC password.'
+          ? 'Enter the email linked to your MVEC account to reset your password.'
           : step === 2
-            ? `Enter the 6-digit OTP prepared for ${email}.`
+            ? `Enter the 6-digit code emailed to ${email}.`
             : 'Choose a strong password that you have not used before.'
       }
     >
@@ -137,10 +165,10 @@ export default function ForgotPassword() {
       {step === 1 && (
         <form onSubmit={sendOtp} className="auth-form">
           <FormField
-            label="Phone number or email"
+            label="Email"
             name="email"
             type="email"
-            placeholder="Phone number or email"
+            placeholder="you@example.com"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
           />
@@ -149,11 +177,11 @@ export default function ForgotPassword() {
             <div className="security-icon">✉</div>
             <div>
               <strong>Why do we need verification?</strong>
-              <p>MVEC uses a one-time verification code to make sure you own the account before allowing a password change.</p>
+              <p>MVEC emails a one-time verification code to make sure you own the account before allowing a password change.</p>
             </div>
           </div>
 
-          <button className="submit-btn" type="submit">Send OTP</button>
+          <button className="submit-btn" type="submit" disabled={busy}>{busy ? 'Sending…' : 'Send code'}</button>
         </form>
       )}
 
@@ -177,14 +205,14 @@ export default function ForgotPassword() {
             </div>
           </div>
 
-          {import.meta.env.DEV && <div className="demo-otp">
+          {devCode && <div className="demo-otp">
             <span>Development verification code</span>
-            <strong>{generatedOtp}</strong>
+            <strong>{devCode}</strong>
           </div>}
 
-          <button className="submit-btn" type="submit">Verify OTP</button>
+          <button className="submit-btn" type="submit" disabled={busy}>{busy ? 'Verifying…' : 'Verify code'}</button>
 
-          <button type="button" className="text-btn centered-btn" onClick={resendOtp}>
+          <button type="button" className="text-btn centered-btn" onClick={resendOtp} disabled={busy}>
             Didn't receive the code? Send again
           </button>
 
@@ -216,12 +244,12 @@ export default function ForgotPassword() {
 
           <div className="password-rules">
             <strong>Password requirements</strong>
-            <span>• At least 8 characters</span>
+            <span>• At least 6 characters</span>
             <span>• Use a mix of letters and numbers</span>
             <span>• Avoid using an old password</span>
           </div>
 
-          <button className="submit-btn" type="submit">Reset password</button>
+          <button className="submit-btn" type="submit" disabled={busy}>{busy ? 'Resetting…' : 'Reset password'}</button>
         </form>
       )}
 

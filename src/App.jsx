@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import Home from "./pages/Home";
 import Login from "./pages/Login";
@@ -23,12 +23,14 @@ import PlatformOperations from "./pages/PlatformOperations";
 import VendorNetwork from "./pages/VendorNetwork";
 import VendorAffiliate from "./pages/VendorAffiliate";
 import AdminDashboard from "./pages/AdminDashboard";
+import BecomeSeller from "./pages/BecomeSeller";
 import Transactions from "./pages/Transactions";
 import SellerOrderDetail from "./pages/SellerOrderDetail";
 import RequireAuth from "./components/RequireAuth";
 import DeliveryTracking from "./components/DeliveryTracking";
 import DashboardLayout from "./components/DashboardLayout";
 import NotificationPanel from "./components/NotificationPanel";
+import MobileBottomNav from "./components/MobileBottomNav";
 import FeaturePages from "./pages/FeaturePages";
 import {
   CommissionRules,
@@ -39,7 +41,6 @@ import {
   RiskManagement,
   LanguageSettings,
 } from "./pages/ExtendedModules";
-import { syncOrderLifecycle } from "./services/mvecStore";
 function DashboardDelivery({ role }) {
   return (
     <DashboardLayout admin={role === "admin"}>
@@ -48,12 +49,8 @@ function DashboardDelivery({ role }) {
   );
 }
 export default function App() {
-  useEffect(() => {
-    syncOrderLifecycle();
-    const timer = setInterval(syncOrderLifecycle, 1000);
-    return () => clearInterval(timer);
-  }, []);
   return (
+    <>
     <Routes>
       <Route path="/" element={<Home />} />
       <Route path="/login" element={<Login />} />
@@ -159,6 +156,14 @@ export default function App() {
         }
       />
       <Route
+        path="/admin/become-seller"
+        element={
+          <RequireAuth roles={["super_admin"]}>
+            <BecomeSeller />
+          </RequireAuth>
+        }
+      />
+      <Route
         path="/vendor/categories"
         element={
           <RequireAuth roles={["vendor"]}>
@@ -227,14 +232,6 @@ export default function App() {
         element={
           <RequireAuth roles={["vendor"]}>
             <DashboardDelivery role="vendor" />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/vendor/transactions"
-        element={
-          <RequireAuth roles={["vendor"]}>
-            <Transactions />
           </RequireAuth>
         }
       />
@@ -589,5 +586,7 @@ export default function App() {
       />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    <MobileBottomNav />
+    </>
   );
 }
