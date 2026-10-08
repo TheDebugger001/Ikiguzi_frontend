@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import Storefront from "../components/Storefront";
 import { useMarketplace } from "../context/MarketplaceContext";
 import { useAuth } from "../context/AuthContext";
@@ -12,6 +12,7 @@ const money = (n) => new Intl.NumberFormat("en-RW").format(Number(n) || 0) + " R
 export default function Checkout() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { cart, clearCart } = useMarketplace();
   const { user } = useAuth();
 
@@ -40,15 +41,15 @@ export default function Checkout() {
     return cart;
   }, [buyNowProduct, cart, params]);
 
-  const [form, setForm] = useState({
-    name: user?.fullName || "",
-    phone: user?.telephone || "",
-    email: user?.email || "",
-    province: "Kigali City",
-    district: "Gasabo",
-    sector: "Remera",
-    address: "KG 11 Ave, Kigali",
-    method: "standard",
+  const [form, setForm] = useState(() => {
+    let saved = {};
+    try { saved = JSON.parse(sessionStorage.getItem("mvec_checkout_form") || "{}"); } catch { /* ignore invalid saved form */ }
+    sessionStorage.removeItem("mvec_checkout_form");
+    return {
+      name: user?.fullName || "", phone: user?.telephone || "", email: user?.email || "",
+      province: "Kigali City", district: "Gasabo", sector: "Remera",
+      address: "KG 11 Ave, Kigali", method: "standard", ...saved,
+    };
   });
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -67,7 +68,11 @@ export default function Checkout() {
       return;
     }
     if (!items.length) { setError("Your cart is empty."); return; }
-    if (!user) { navigate("/login", { state: { from: "/checkout" } }); return; }
+    if (!user) {
+      sessionStorage.setItem("mvec_checkout_form", JSON.stringify(form));
+      navigate("/signup", { state: { from: `${location.pathname}${location.search}`, checkoutReturn: true } });
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -92,7 +97,9 @@ export default function Checkout() {
         order = res.order;
         await clearCart();
       }
-      navigate(`/payment/${order.id}`);
+      const orderId = order?._id || order?.id;
+      if (!orderId) throw new Error("The order was created, but its ID was missing from the response.");
+      navigate(`/payment/${orderId}`);
     } catch (err) {
       setError(extractErrorMessage(err));
     } finally {

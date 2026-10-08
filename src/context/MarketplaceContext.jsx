@@ -28,17 +28,27 @@ const normalizeCart = (items) => (Array.isArray(items) ? items.map(normalizeCart
 
 export function MarketplaceProvider({ children }) {
   const { user } = useAuth();
-  const [cart, setCart] = useState([]);
+  const [cart, setCart] = useState(read('mvec_cart'));
   const [wishlist, setWishlist] = useState(read('mvec_wishlist'));
   const [cartLoading, setCartLoading] = useState(false);
 
   const loadCart = useCallback(async () => {
     if (!user) {
-      setCart([]);
+      setCart(read('mvec_cart'));
       return;
     }
     setCartLoading(true);
     try {
+      const guestItems = read('mvec_cart');
+      let pendingGuestItems = guestItems;
+      while (pendingGuestItems.length) {
+        const [item, ...remaining] = pendingGuestItems;
+        const productId = item._id || item.id;
+        if (productId) await cartApi.add(productId, Number(item.quantity || item.qty || 1));
+        pendingGuestItems = remaining;
+        if (remaining.length) localStorage.setItem('mvec_cart', JSON.stringify(remaining));
+        else localStorage.removeItem('mvec_cart');
+      }
       const serverCart = await cartApi.get();
       setCart(normalizeCart(serverCart?.items));
     } catch {

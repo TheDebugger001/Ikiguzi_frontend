@@ -62,5 +62,5 @@ export const ordersApi = {
   confirmDelivery: (id, deliveryOtp) =>
     client.patch(`/orders/${id}/deliver`, { deliveryOtp }).then((r) => r.data),
   cancel: (id) =>
-    client.patch(`/orders/${id}/cancel`).then((r) => r.data),
+    client.post(`/orders/${id}/cancel`).then((r) => r.data),
 };

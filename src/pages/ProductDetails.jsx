@@ -29,7 +29,7 @@ export default function ProductDetails() {
     return () => { mounted = false; };
   }, []);
 
-  const p = catalog.find(x => String(x.id) === id);
+  const p = catalog.find(x => String(x.id) === id || String(x.publicId) === id);
 
   useEffect(() => {
     if (!p?.id) return;

@@ -14,7 +14,6 @@ const fmt = (ms) => {
 };
 
 const CANCEL_WINDOW_MS = 30 * 60 * 1000;
-const DELIVERY_WINDOW_MS = 3 * 60 * 60 * 1000;
 const STATUS_STEPS = ["PENDING", "CONFIRMED", "PROCESSING", "SHIPPED", "DELIVERED"];
 const REASONS = [
   ["Product not received", "ITEM_NOT_RECEIVED"],
@@ -42,13 +41,25 @@ export default function OrderDetails() {
   const [message, setMessage] = useState("");
 
   const load = () => {
+    if (!id || id === "undefined") {
+      setError("A valid order ID is required.");
+      setLoading(false);
+      return;
+    }
     ordersApi.getById(id)
       .then((res) => setOrder(res.order))
       .catch((err) => setError(extractErrorMessage(err)))
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { load(); }, [id]);
+  useEffect(() => {
+    if (!id || id === "undefined") {
+      setError("A valid order ID is required.");
+      setLoading(false);
+      return;
+    }
+    load();
+  }, [id]);
   useEffect(() => {
     const t = setInterval(() => setTick((x) => x + 1), 1000);
     return () => clearInterval(t);
@@ -60,15 +71,16 @@ export default function OrderDetails() {
   const item = order.items?.[0];
   const vendor = item?.vendor;
   const idx = Math.max(0, STATUS_STEPS.indexOf(order.orderStatus));
-  const remaining = order.paymentStatus === "PAID" ? DELIVERY_WINDOW_MS - (Date.now() - new Date(order.createdAt).getTime()) : 0;
+  const cancelRemaining = CANCEL_WINDOW_MS - (Date.now() - new Date(order.createdAt).getTime());
   const canCancel =
     ["PENDING", "CONFIRMED", "PROCESSING"].includes(order.orderStatus) &&
-    (order.paymentStatus !== "PAID" || Date.now() - new Date(order.createdAt).getTime() <= CANCEL_WINDOW_MS);
+    order.paymentStatus === "PAID" && cancelRemaining > 0;
 
   const cancel = async () => {
     setMessage("");
     try {
-      const res = await ordersApi.cancel(order.id);
+      const orderId = order._id || order.id || id;
+      const res = await ordersApi.cancel(orderId);
       setOrder(res.order);
       setMessage(res.message);
     } catch (err) {
@@ -81,7 +93,7 @@ export default function OrderDetails() {
     setReportBusy(true);
     try {
       await disputesApi.open({
-        orderId: order.id,
+        orderId: order._id || order.id || id,
         reason,
         description: description.trim(),
         disputedAmount: order.totalAmount,
@@ -99,7 +111,7 @@ export default function OrderDetails() {
     try {
       await reviewsApi.create({
         productId: item.productId,
-        parentOrderId: order.id,
+        parentOrderId: order._id || order.id || id,
         rating,
         reviewText: reviewText.trim(),
       });
@@ -137,9 +149,9 @@ export default function OrderDetails() {
 
     {order.paymentStatus === "PAID" && !["DELIVERED", "CANCELLED", "REFUNDED"].includes(order.orderStatus) && (
       <section className="data-card countdown-card">
-        <div className="data-card-head"><div><h3>Delivery countdown</h3><span>Three hours from successful payment</span></div><strong className={remaining < 15 * 60 * 1000 ? "danger-text" : ""}>{fmt(Math.max(0, remaining))}</strong></div>
-        <p>{remaining > 0 ? "Your order must be delivered and confirmed before this timer expires." : "The delivery window has expired."}</p>
-        {canCancel && <button className="outline-btn" onClick={cancel}>Cancel order · full refund</button>}
+        <div className="data-card-head"><div><h3>Cancellation window</h3><span>30 minutes from order creation</span></div><strong className={cancelRemaining < 5 * 60 * 1000 ? "danger-text" : ""}>{fmt(Math.max(0, cancelRemaining)).slice(-5)}</strong></div>
+        <p>{cancelRemaining > 0 ? "You can cancel this order within: " + fmt(cancelRemaining).slice(-5) : "Cancellation window expired. Order is now being processed for delivery."}</p>
+        {canCancel && <button className="outline-btn" onClick={cancel}>Cancel Order</button>}
       </section>
     )}
 

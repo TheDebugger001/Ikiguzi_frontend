@@ -23,7 +23,10 @@ export function mapBackendProduct(p) {
   const gallery = Array.isArray(media.gallery) ? media.gallery : Array.isArray(p.gallery) ? p.gallery : [];
   const mainImage = media.mainImage || p.mainImage || gallery[0] || PLACEHOLDER_IMG;
   return {
-    id: p.id || p.publicId,
+    // API mutations and reviews use Mongo's ObjectId. publicId is a display
+    // identifier and is not accepted by Product.findById().
+    id: p._id || p.id || p.publicId,
+    publicId: p.publicId || "",
     name: p.name || '',
     category: category.name || (typeof p.category === 'string' ? p.category : 'Uncategorized'),
     brand: p.brand || '',

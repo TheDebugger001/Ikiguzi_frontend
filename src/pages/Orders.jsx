@@ -15,7 +15,7 @@ const fmt = (ms) => {
 const CANCEL_WINDOW_MS = 30 * 60 * 1000;
 const canCancel = (o) =>
   ["PENDING", "CONFIRMED", "PROCESSING"].includes(o.orderStatus) &&
-  (o.paymentStatus !== "PAID" || Date.now() - new Date(o.createdAt).getTime() <= CANCEL_WINDOW_MS);
+  o.paymentStatus === "PAID" && Date.now() - new Date(o.createdAt).getTime() < CANCEL_WINDOW_MS;
 
 export default function Orders() {
   const [orders, setOrders] = useState([]);
@@ -93,7 +93,7 @@ export default function Orders() {
       </>
     )}
 
-    <div className="verified-box"><b>🔒 Protected payment & delivery window</b><p>After successful payment, MVEC records the funds as HELD. You have 30 minutes to cancel. The delivery window is three hours; if delivery is not confirmed before it expires, the order is cancelled and a full refund is recorded.</p></div>
+    <div className="verified-box"><b>🔒 Protected payment & delivery window</b><p>After successful payment, MVEC records the funds as HELD. You have 30 minutes from order creation to cancel and receive a full refund.</p></div>
     <Link className="gradient-btn" to="/shop">Continue shopping</Link>
   </main></Storefront>;
 }
