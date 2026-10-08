@@ -61,10 +61,11 @@ export default function VendorNetwork() {
           {rows.map(s => (
             <div className="data-card" key={s.id}>
               <div className="data-card-head">
-                <div><h3>{s.businessName}</h3><span>{s.locationId || "Rwanda"}</span></div>
+                <div style={{display:"flex",gap:10,alignItems:"center"}}>{s.logoUrl ? <img className="vendor-avatar" src={s.logoUrl} alt=""/> : <div className="vendor-avatar">{(s.businessName || "S")[0]}</div>}<div><h3>{s.businessName}</h3><span>{s.category || "Business"} · {typeof s.location === "string" ? s.location : (s.location?.city || "Rwanda")}</span></div></div>
                 {s.verificationStatus === "VERIFIED" && <em className="status active">Verified ✓</em>}
               </div>
               <div className="profile-detail">
+                {s.description && <span>{s.description}</span>}
                 <span>Rating: <b>{Number(s.ratingAvg || 0).toFixed(1)}/5</b></span>
                 <span>Contact: <b>{s.phone}</b></span>
               </div>

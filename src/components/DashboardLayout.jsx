@@ -2,6 +2,7 @@ import {useState,useEffect} from 'react';import {Link,useLocation,useNavigate} f
 import {navGroupsForRole} from '../data/navItems';
 import {notificationsApi} from '../API/notifications';
 import {searchApi} from '../API/search';
+import RestrictedOverview from './dashboard/RestrictedOverview';
 
 function GroupedNav({groups,pathname,onNavigate}){
   const activeGroupLabel=groups.find(g=>g.items.some(([href])=>href===pathname))?.label;

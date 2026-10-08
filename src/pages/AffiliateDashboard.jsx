@@ -59,6 +59,7 @@ function Products() {
   const [page, setPage] = useState(1);
   const [copied, setCopied] = useState("");
   const [creating, setCreating] = useState("");
+  const [terminating, setTerminating] = useState("");
   const [error, setError] = useState("");
   const perPage = 6;
 
@@ -103,6 +104,21 @@ function Products() {
     setTimeout(() => setCopied(""), 1600);
   };
 
+  const terminateLink = async p => {
+    const link = linkFor(p.id);
+    if (!link || !window.confirm(`Terminate the affiliate link for ${p.name}?`)) return;
+    setError("");
+    setTerminating(p.id);
+    try {
+      await affiliatesApi.deleteLink(link.id || link._id);
+      setLinks(prev => prev.filter(item => String(item.id || item._id) !== String(link.id || link._id)));
+    } catch (err) {
+      setError(extractErrorMessage(err));
+    } finally {
+      setTerminating("");
+    }
+  };
+
   return <>
     <div className="dash-page-head"><div><span className="eyebrow">AFFILIATE PRODUCTS</span><h1>Choose products to promote</h1><p>Search the marketplace and create a unique promotion link for any product.</p></div></div>
     {error && <div className="form-error">{error}</div>}
@@ -117,7 +133,7 @@ function Products() {
               <div className="admin-product-main"><img src={p.image} alt="" /><div><b>{p.name}</b><small>{money(p.price)} · {p.vendor}</small></div></div>
               <div className="affiliate-product-meta"><span>Available stock <b>{p.stock} units</b></span></div>
               <div className="affiliate-link-actions">
-                <button className="gradient-btn" onClick={() => makeLink(p)} disabled={!!hasLink || creating === p.id}>{hasLink ? "Link created" : creating === p.id ? "Creating…" : "Create affiliate link"}</button>
+                {hasLink ? <button className="red-outline-btn" onClick={() => terminateLink(p)} disabled={terminating === p.id}>{terminating === p.id ? "Terminating…" : "Terminate the link"}</button> : <button className="gradient-btn" onClick={() => makeLink(p)} disabled={creating === p.id}>{creating === p.id ? "Creating…" : "Create affiliate link"}</button>}
                 {hasLink && <button className="outline-btn copy-link-btn" onClick={() => copyFor(p)}><Icon name="copy" size={15} />{copied === String(p.id) ? "Copied" : "Copy link"}</button>}
               </div>
             </div>

@@ -7,6 +7,8 @@ import {vendors,categories} from '../data';
 import {productsApi} from '../API/products';
 import {categoriesApi} from '../API/categories';
 import {wholesaleApi} from '../API/wholesale';
+import {suppliersApi} from '../API/suppliers';
+import {supportApi} from '../API/support';
 import {disputesApi} from '../API/disputes';
 import {adminApi} from '../API/admin';
 import {mapBackendProduct} from '../services/catalogApi';
@@ -83,6 +85,13 @@ function WholesaleList({role}){
   </div></>;
 }
 
+function SupplierLiveModule({type}){
+ const [rows,setRows]=useState([]);const [loading,setLoading]=useState(true);const [error,setError]=useState('');
+ useEffect(()=>{const request=type==='transactions'?suppliersApi.getFinanceLedger({limit:100}):type==='reviews'?suppliersApi.getReviews({limit:100}):suppliersApi.getSupplyRequests({limit:100});request.then(res=>setRows(type==='transactions'?(res.entries||[]):type==='reviews'?(res.reviews||[]):(res.requests||[]))).catch(err=>setError(extractErrorMessage(err))).finally(()=>setLoading(false));},[type]);
+ const columns=type==='transactions'?[{key:'description',label:'Description'},{key:'kind',label:'Type'},{key:'amount',label:'Amount',render:r=>money(r.amount)},{key:'at',label:'Date',render:r=>dateDMY(r.at)}]:type==='reviews'?[{key:'author',label:'Vendor'},{key:'orderNumber',label:'Order'},{key:'rating',label:'Rating',render:r=>`★ ${r.rating}`},{key:'comment',label:'Comment'},{key:'createdAt',label:'Date',render:r=>dateDMY(r.createdAt)}]:[{key:'reference',label:'Request'},{key:'status',label:'Status'},{key:'neededBy',label:'Needed by',render:r=>dateDMY(r.neededBy)},{key:'note',label:'Note'}];
+ return <><Header eyebrow={`SUPPLIER · ${type.replace('-', ' ').toUpperCase()}`} title={type==='transactions'?'Transactions':type==='reviews'?'Reviews':'Supply requests'} desc="Live records from the supplier database."/>{error&&<div className="form-error">{error}</div>}<div className="data-card">{loading?<div className="empty-state"><h3>Loading live records…</h3></div>:<SmartTable columns={columns} rows={rows} rowKey={r=>r._id||r.id||r.reference} searchPlaceholder={`Search ${type.replace('-', ' ')}…`} empty="No records in the database."/>}</div></>;
+}
+
 function AdminPayments(){
  const [rows,setRows]=useState([]);const [loading,setLoading]=useState(true);const [error,setError]=useState('');
  useEffect(()=>{adminApi.getPayments({pageSize:100}).then(res=>setRows(res.data||[])).catch(err=>setError(extractErrorMessage(err))).finally(()=>setLoading(false));},[]);
@@ -155,7 +164,7 @@ function GenericTableModule({role,type}){
  if(type==='notifications') return <><Header eyebrow={`${role.toUpperCase()} · ${cfg[0]}`} title={cfg[1]} desc={cfg[2]}/><NotificationPanel/></>;
  if(type==='categories'&&role==='vendor') return <VendorCategories/>;
  if(type==='purchases'&&role==='vendor') return <WholesaleList role="vendor"/>;
- if((type==='supply-requests'||type==='transactions')&&role==='supplier') return <WholesaleList role="supplier"/>;
+ if((type==='supply-requests'||type==='transactions'||type==='reviews')&&role==='supplier') return <SupplierLiveModule type={type}/>;
  if(type==='payments'&&role==='admin') return <AdminPayments/>;
  if(type==='refunds') return <DisputesList role={role}/>;
  return <><Header eyebrow={`${role.toUpperCase()} · ${cfg[0]}`} title={cfg[1]} desc={cfg[2]}/>{notice&&<div className="success-text">{notice}</div>}<div className="data-card"><SmartTable columns={columns} rows={data} rowKey={r=>r.id||r.name||r.plan||r.zone||r.control||r.signal||r.party} searchPlaceholder={`Search ${cfg[1].toLowerCase()}…`} exportName={`mvec-${role}-${type}`} actions={actionTypes.includes(type)?contextualAction:undefined}/></div>{details&&<div className="modal-backdrop" onMouseDown={()=>setDetails(null)}><div className="modal" onMouseDown={e=>e.stopPropagation()}><button className="modal-close" onClick={()=>setDetails(null)}>×</button><span className="eyebrow">DETAILS</span><h2>{type==='trust'?'Trust profile':'Security policy'}</h2><div className="vendor-detail-grid">{Object.entries(details).map(([k,v])=><div key={k}><span>{k.replace(/([A-Z])/g,' $1')}</span><b>{String(v)}</b></div>)}</div><button className="gradient-btn" onClick={()=>setDetails(null)}>Done</button></div></div>}</>;
@@ -164,7 +173,7 @@ function GenericTableModule({role,type}){
 
 function SupportModule({role}){
  const [subject,setSubject]=useState('Marketplace support'); const [reference,setReference]=useState(''); const [message,setMessage]=useState(''); const [sent,setSent]=useState(false);
- const submit=()=>{if(!subject.trim()||!message.trim())return;write(`mvec_${role}_support`,{id:`CASE-${Date.now()}`,subject:subject.trim(),reference:reference.trim(),message:message.trim(),status:'Submitted',date:dateDMY(new Date())});setSent(true);setMessage('');};
+ const submit=async()=>{if(!subject.trim()||!message.trim())return;try{await supportApi.createCase({subject:subject.trim(),description:message.trim(),orderId:reference.trim()||undefined});setSent(true);setMessage('');}catch(error){setSent(false);}};
  return <div className="data-card support-direct"><h3>Contact MVEC</h3><p>Send a message directly to the MVEC support team. Your request can be linked to an order or transaction reference.</p><div className="form-row"><label className="field"><span>Subject</span><input value={subject} onChange={e=>setSubject(e.target.value)}/></label><label className="field"><span>Order or transaction ID</span><input value={reference} onChange={e=>setReference(e.target.value)} placeholder="Optional"/></label></div><label className="field"><span>Message</span><textarea rows="5" value={message} onChange={e=>setMessage(e.target.value)} placeholder="Describe the issue…"/></label><div className="support-actions"><button className="gradient-btn" onClick={submit} disabled={!subject.trim()||!message.trim()}>Send to MVEC</button><a className="outline-btn" href="sms:+250788100000">Send SMS</a></div>{sent&&<p className="success-text">Support request submitted successfully.</p>}</div>;
 }
 function BuyerRefunds(){

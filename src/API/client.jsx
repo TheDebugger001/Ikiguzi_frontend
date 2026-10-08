@@ -42,6 +42,13 @@ export function mapUser(u) {
     gender: u.gender || "other",
     role: u.role || "buyer",
     companyName: u.companyName || "",
+    businessName: u.businessName || u.companyName || "",
+    logoUrl: u.logoUrl || "",
+    description: u.description || "",
+    category: u.category || "",
+    location: u.location || null,
+    isOnboarded: u.isOnboarded !== false,
+    verificationStatus: u.verificationStatus || "VERIFIED",
     isSellerEnabled: Boolean(u.isSellerEnabled),
   };
 }

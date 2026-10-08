@@ -38,8 +38,9 @@ export default function Vendors() {
                 {v.logoUrl ? <img className="vendor-avatar" src={v.logoUrl} alt="" /> : <div className="vendor-avatar">{(v.businessName || 'V')[0]}</div>}
                 <div>
                   <b>{v.businessName}</b>
-                  <small>{v.locationId || 'Rwanda'}</small>
+                  <small>{v.category || 'Business'} · {typeof v.location === 'string' ? v.location : (v.location?.city || 'Rwanda')}</small>
                   <span>★ {Number(v.ratingAvg || 0).toFixed(1)}</span>
+                  {v.description && <small>{v.description}</small>}
                   <small>Verified seller · Rwanda</small>
                 </div>
                 <Icon name="arrow" />

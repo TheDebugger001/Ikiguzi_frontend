@@ -50,10 +50,11 @@ export default function VendorDetail() {
           <div>
             <span className="eyebrow">{vendor.verificationStatus === 'VERIFIED' ? 'VERIFIED STORE' : 'STORE'}</span>
             <h1>{vendor.businessName}</h1>
-            <p>★ {Number(vendor.ratingAvg || 0).toFixed(1)} · {products.length} products</p>
+            <p>★ {Number(vendor.ratingAvg || 0).toFixed(1)} · {products.length} products · {vendor.category || 'Business'}</p>
           </div>
           <button className="outline-btn" onClick={toggleFollow}>{following ? 'Following' : 'Follow store'}</button>
         </div>
+        <div className="verified-box"><b>{vendor.category || 'Business'} · {typeof vendor.location === 'string' ? vendor.location : (vendor.location?.city || 'Rwanda')}</b><p>{vendor.description || 'This business has not added a description yet.'}</p></div>
         <div className="section-heading"><h2>Store products</h2><Link to="/shop">All products →</Link></div>
         {products.length === 0 && <div className="empty-state"><h3>No products listed yet</h3></div>}
         <div className="product-grid">

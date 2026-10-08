@@ -52,7 +52,9 @@ export function AuthProvider({ children }) {
   }
 
   async function refresh() {
-    return user;
+    const me = await authApi.me();
+    setUser(me);
+    return me;
   }
 
   return (
