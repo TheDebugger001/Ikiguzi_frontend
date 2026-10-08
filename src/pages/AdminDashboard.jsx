@@ -47,12 +47,14 @@ function GenericAdminTable({ title, subtitle, type }) {
   const [error, setError] = useState("");
   const [viewing, setViewing] = useState(null);
   const [page, setPage] = useState(1);
+  const [roleFilter, setRoleFilter] = useState("");
 
   useEffect(() => {
     let alive = true;
     setLoading(true);
     setError("");
-    const params = { page, pageSize: 20 };
+    const params = { page, pageSize: 20, limit: 20 };
+    if (type === "users" && roleFilter) params.role = roleFilter;
 
     const call =
       type === "users" ? adminApi.getUsers(params) :
@@ -80,22 +82,22 @@ function GenericAdminTable({ title, subtitle, type }) {
       .finally(() => alive && setLoading(false));
 
     return () => { alive = false; };
-  }, [type, page]);
+  }, [type, page, roleFilter]);
 
   const rows = (() => {
     if (type === "users") {
-      return list.map((u) => ({ id: u.id, name: u.Fullname, email: u.email, role: u.role, status: u.accountStatus === "BLOCKED" ? "Blocked" : "Active" }));
+      return list.map((u) => { const rawStatus=String(u.status||"ACTIVE").toUpperCase(); return { id: u.id, name: u.name || u.fullName || u.Fullname || "Unnamed user", email: u.email || "—", role: u.role, rawStatus, status: ["BLOCK", "BLOCKED"].includes(rawStatus) ? "Blocked" : ["SUSPEND", "SUSPENDED"].includes(rawStatus) ? "Suspended" : rawStatus === "INVESTIGATE" ? "Investigate" : "Active" }; });
     }
     if (type === "vendors") {
       return list.map((v) => ({
-        id: v.id, name: v.businessName,
+        id: v.id || v._id, name: v.businessName,
         category: v.user?.companyName ? "Registered business" : "Marketplace vendor",
-        products: "N/A", rating: v.ratingAvg || 0, status: v.verificationStatus,
+        products: v.productCount ?? 0, rating: v.ratingAvg || 0, status: v.verificationStatus,
       }));
     }
     if (type === "products") {
       return list.map((p) => ({
-        id: p.id, name: p.name, vendor: p.vendor?.companyName || p.vendor?.fullName || "Unknown vendor",
+        id: p.id || p._id, name: p.name, vendor: p.vendor?.companyName || p.vendor?.fullName || p.vendor?.Fullname || "Unknown vendor",
         price: p.price, stock: p.stockQuantity, status: p.status,
       }));
     }
@@ -104,8 +106,8 @@ function GenericAdminTable({ title, subtitle, type }) {
     }
     if (type === "orders") {
       return list.map((o) => ({
-        id: o.orderNumber, buyer: o.user?.fullName || "Unknown buyer",
-        vendor: o.items?.[0]?.vendor?.companyName || o.items?.[0]?.vendor?.fullName || "Multiple vendors",
+        id: o.orderNumber, buyer: o.user?.fullName || o.user?.Fullname || "Unknown buyer",
+        vendor: o.items?.[0]?.vendor?.companyName || o.items?.[0]?.vendor?.fullName || o.items?.[0]?.vendor?.Fullname || "Multiple vendors",
         total: o.totalAmount, payment: o.paymentStatus, status: o.orderStatus,
       }));
     }
@@ -126,15 +128,15 @@ function GenericAdminTable({ title, subtitle, type }) {
 
   const [busyId, setBusyId] = useState(null);
   const toggleUserBlock = async (row) => {
-    const nextStatus = row.status === "Blocked" ? "ACTIVE" : "BLOCKED";
-    const confirmMsg = nextStatus === "BLOCKED"
+    const nextStatus = row.status === "Active" ? "BLOCK" : "ACTIVE";
+    const confirmMsg = nextStatus === "BLOCK"
       ? `Block ${row.name || row.email}? They will not be able to log in.`
       : `Unblock ${row.name || row.email}?`;
     if (!window.confirm(confirmMsg)) return;
     setBusyId(row.id);
     try {
       await adminApi.updateUserStatus(row.id, { status: nextStatus });
-      setList((current) => current.map((u) => (u.id === row.id ? { ...u, accountStatus: nextStatus } : u)));
+      setList((current) => current.map((u) => (u.id === row.id ? { ...u, status: nextStatus } : u)));
     } catch (err) {
       window.alert(extractErrorMessage(err));
     } finally {
@@ -142,7 +144,7 @@ function GenericAdminTable({ title, subtitle, type }) {
     }
   };
 
-  return <DashboardLayout admin><div className="dash-page-head"><div><span className="eyebrow">SUPER ADMIN</span><h1>{title}</h1><p>{subtitle}</p></div></div><div className="verified-box"><b>Live marketplace data</b><p>This list is read directly from the MVEC database. Manage vendor and product moderation from the dedicated action screens.</p></div><div className="data-card"><div className="data-card-head"><div><h3>{title}</h3><span>{meta.total} records</span></div><span className="muted">Marketplace records from the database</span></div>{loading && <div className="empty-state"><h3>Loading…</h3></div>}{!loading && error && <div className="empty-state"><h3>Couldn't load {title.toLowerCase()}</h3><p>{error}</p></div>}{!loading && !error && <SmartTable columns={columns} rows={rows} rowKey={(r,i)=>r.id||r.email||r.name||i} searchPlaceholder={`Search ${title.toLowerCase()}…`} exportName={`admin-${type}`} actions={item=><>{type==='users'&&item.role!=='super_admin'&&<button className="table-action-btn" disabled={busyId===item.id} onClick={()=>toggleUserBlock(item)}>{item.status==='Blocked'?'Unblock':'Block'}</button>}<button className="table-action-btn" onClick={()=>setViewing(item)}><Icon name="eye"/> View</button></>}/>}{!loading && !error && meta.total > 20 && <Pagination page={page} setPage={setPage} total={meta.total} perPage={20}/>}</div>{viewing&&<AdminRecordView title={`${title.slice(0,-1)} record`} record={viewing} onClose={()=>setViewing(null)}/>}</DashboardLayout>;
+  return <DashboardLayout admin><div className="dash-page-head"><div><span className="eyebrow">SUPER ADMIN</span><h1>{title}</h1><p>{subtitle}</p></div></div><div className="verified-box"><b>Live marketplace data</b><p>This list is read directly from the MVEC database. User actions update the account record and take effect across the marketplace.</p></div><div className="data-card"><div className="data-card-head"><div><h3>{title}</h3><span>{meta.total} records</span></div>{type==='users'&&<label className="field"><span>Filter by role</span><select value={roleFilter} onChange={e=>{setRoleFilter(e.target.value);setPage(1);}}><option value="">All roles</option><option value="buyer">Buyers</option><option value="vendor">Vendors</option><option value="affiliate">Affiliates</option><option value="supplier">Suppliers</option><option value="super_admin">Administrators</option><option value="developer">Developers</option></select></label>}</div><span className="muted">Marketplace records from the database</span>{loading && <div className="empty-state"><h3>Loading…</h3></div>}{!loading && error && <div className="empty-state"><h3>Couldn't load {title.toLowerCase()}</h3><p>{error}</p></div>}{!loading && !error && <SmartTable columns={columns} rows={rows} rowKey={(r,i)=>r.id||r.email||r.name||i} searchPlaceholder={`Search ${title.toLowerCase()}…`} exportName={`admin-${type}`} actions={item=><>{type==='users'&&item.role!=='super_admin'&&<button className="table-action-btn" disabled={busyId===item.id} onClick={()=>toggleUserBlock(item)}>{item.status==='Active'?'Block':'Unblock'}</button>}<button className="table-action-btn" onClick={()=>setViewing(item)}><Icon name="eye"/> View</button></>}/>}{!loading && !error && meta.total > 20 && <Pagination page={page} setPage={setPage} total={meta.total} perPage={20}/>}</div>{viewing&&<AdminRecordView title={`${title.slice(0,-1)} record`} record={viewing} onClose={()=>setViewing(null)}/>}</DashboardLayout>;
 }
 function AdminRecordView({title,record,onClose}){return <div className="modal-backdrop" onMouseDown={onClose}><div className="modal" onMouseDown={e=>e.stopPropagation()}><button className="modal-close" onClick={onClose}>×</button><span className="eyebrow">ACCOUNT REVIEW</span><h2>{title}</h2><div className="vendor-detail-grid">{Object.entries(record).filter(([k])=>k!=='id').map(([k,v])=><div key={k}><span>{k.replace(/([A-Z])/g,' $1')}</span><b>{String(v)}</b></div>)}</div><button className="gradient-btn" onClick={onClose}>Done</button></div></div>}
 
@@ -158,9 +160,10 @@ function AdminEditModal({value,isNew,onCancel,onSave}){
 function AdminReports(){
   const [overview, setOverview] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   useEffect(() => {
     let alive = true;
-    adminApi.getOverview().then((res) => alive && setOverview(res.overview)).finally(() => alive && setLoading(false));
+    adminApi.getOverview().then((res) => alive && setOverview(res.overview)).catch((err) => alive && setError(extractErrorMessage(err))).finally(() => alive && setLoading(false));
     return () => { alive = false; };
   }, []);
   const rows = overview ? [
@@ -172,7 +175,7 @@ function AdminReports(){
     ['Orders in transit', 'Live', overview.pendingDeliveries],
     ['Pending vendor verifications', 'Live', overview.pendingVendorVerifications],
   ].map(r=>({report:r[0],range:r[1],summary:r[2]})) : [];
-  return <DashboardLayout admin><div className="dash-page-head"><div><span className="eyebrow">ADMIN CONTROL</span><h1>Reports</h1><p>Platform-wide revenue, vendors, orders, payments and marketplace performance.</p></div></div><div className="metric-grid"><Metric label="Gross sales" value={overview?money(overview.gmvToday):'...'} change="Today" icon="chart"/><Metric label="Orders" value={overview?overview.ordersToday:'...'} change="Today" icon="cart"/><Metric label="Vendors" value={overview?overview.totalVendors:'...'} change="Active marketplace vendors" icon="shop"/><Metric label="Commission" value={overview?money(overview.mvecRevenueToday):'...'} change="Today" icon="wallet"/></div><div className="data-card"><div className="data-card-head"><div><h3>Platform reports</h3><span>Live reporting data</span></div></div>{loading && <div className="empty-state"><h3>Loading…</h3></div>}{!loading && <SmartTable columns={[{key:'report',label:'Report',render:r=><b>{r.report}</b>},{key:'range',label:'Range'},{key:'summary',label:'Summary'}]} rows={rows} rowKey={r=>r.report} searchPlaceholder="Search reports…" exportName="admin-platform-reports"/>}</div></DashboardLayout>}
+  return <DashboardLayout admin><div className="dash-page-head"><div><span className="eyebrow">ADMIN CONTROL</span><h1>Reports</h1><p>Platform-wide revenue, vendors, orders, payments and marketplace performance.</p></div></div>{error&&<div className="form-error">Reports are unavailable: {error}</div>}<div className="metric-grid"><Metric label="Gross sales" value={overview?money(overview.gmvToday):loading?'...':'Unavailable'} change="Today" icon="chart"/><Metric label="Orders" value={overview?overview.ordersToday:loading?'...':'Unavailable'} change="Today" icon="cart"/><Metric label="Vendors" value={overview?overview.totalVendors:loading?'...':'Unavailable'} change="Marketplace vendor accounts" icon="shop"/><Metric label="Commission" value={overview?money(overview.mvecRevenueToday):loading?'...':'Unavailable'} change="Today" icon="wallet"/></div><div className="data-card"><div className="data-card-head"><div><h3>Platform reports</h3><span>Live reporting data</span></div></div>{loading && <div className="empty-state"><h3>Loading…</h3></div>}{!loading && !error && <SmartTable columns={[{key:'report',label:'Report',render:r=><b>{r.report}</b>},{key:'range',label:'Range'},{key:'summary',label:'Summary'}]} rows={rows} rowKey={r=>r.report} searchPlaceholder="Search reports…" exportName="admin-platform-reports"/>}</div></DashboardLayout>}
 function AdminSettings(){const initial={marketplaceName:'MVEC',currency:'RWF',vendorApproval:'Manual',commission:'10%',cancellation:'24 hours',reviews:'Required',orders:'Enabled',shipping:'Enabled',payouts:'Enabled'};const [settings,setSettings]=useState(()=>{try{return JSON.parse(localStorage.getItem('mvec_admin_settings'))||initial}catch{return initial}});const [saved,setSaved]=useState(false);const u=(key,value)=>setSettings(s=>({...s,[key]:value}));const save=()=>{localStorage.setItem('mvec_admin_settings',JSON.stringify(settings));setSaved(true);setTimeout(()=>setSaved(false),1800)};return <DashboardLayout admin><div className="dash-page-head"><div><span className="eyebrow">ADMIN CONTROL</span><h1>Platform Settings</h1><p>Configure marketplace-wide rules and system behavior.</p></div><button className="gradient-btn" onClick={save}>Save changes</button></div>{saved&&<div className="success-text">Platform settings saved.</div>}<div className="settings-grid"><div className="data-card"><h3>Marketplace</h3><label className="field"><span>Marketplace name</span><input value={settings.marketplaceName} onChange={e=>u('marketplaceName',e.target.value)}/></label><label className="field"><span>Default currency</span><select value={settings.currency} onChange={e=>u('currency',e.target.value)}><option>RWF</option><option>USD</option></select></label><label className="field"><span>Vendor approval</span><select value={settings.vendorApproval} onChange={e=>u('vendorApproval',e.target.value)}><option>Manual</option><option>Automatic</option></select></label></div><div className="data-card"><h3>Commerce rules</h3><label className="field"><span>Platform commission</span><input value={settings.commission} onChange={e=>u('commission',e.target.value)}/></label><label className="field"><span>Order cancellation window</span><input value={settings.cancellation} onChange={e=>u('cancellation',e.target.value)}/></label><label className="field"><span>Reviews moderation</span><select value={settings.reviews} onChange={e=>u('reviews',e.target.value)}><option>Required</option><option>Optional</option></select></label></div><div className="data-card"><h3>Notifications</h3><label className="field"><span>Order notifications</span><select value={settings.orders} onChange={e=>u('orders',e.target.value)}><option>Enabled</option><option>Disabled</option></select></label><label className="field"><span>Shipping notifications</span><select value={settings.shipping} onChange={e=>u('shipping',e.target.value)}><option>Enabled</option><option>Disabled</option></select></label><label className="field"><span>Payout notifications</span><select value={settings.payouts} onChange={e=>u('payouts',e.target.value)}><option>Enabled</option><option>Disabled</option></select></label></div></div></DashboardLayout>}
 
 // -----------------------------------------------------------------------------
@@ -184,31 +187,37 @@ export default function AdminDashboard() {const [createOpen,setCreateOpen]=useSt
   const [recentOrders, setRecentOrders] = useState([]);
   const [categoryHealth, setCategoryHealth] = useState([]);
   const [dashLoading, setDashLoading] = useState(true);
+  const [dashError, setDashError] = useState("");
   const location = useLocation();
   const path = location.pathname;
 
   useEffect(() => {
     if (path !== "/admin") return;
     let alive = true;
-    setDashLoading(true);
-    Promise.allSettled([
-      adminApi.getOverview(),
-      adminApi.getOrders({ page: 1, pageSize: 5 }),
-      categoriesApi.getAll(),
-    ]).then(([overviewRes, ordersRes, categoriesRes]) => {
+    const refresh = async (initial = false) => {
+      if (initial) setDashLoading(true);
+      const [overviewRes, ordersRes] = await Promise.allSettled([
+        adminApi.getOverview(),
+        adminApi.getOrders({ page: 1, pageSize: 5 }),
+      ]);
       if (!alive) return;
-      if (overviewRes.status === "fulfilled") setOverview(overviewRes.value.overview);
-      if (ordersRes.status === "fulfilled") setRecentOrders(ordersRes.value.data || []);
-      if (categoriesRes.status === "fulfilled") {
-        const cats = (categoriesRes.value.categories || [])
-          .slice()
-          .sort((a, b) => (b._count?.products || 0) - (a._count?.products || 0))
-          .slice(0, 6);
-        const maxCount = Math.max(1, ...cats.map((c) => c._count?.products || 0));
-        setCategoryHealth(cats.map((c) => ({ name: c.name, products: c._count?.products || 0, percent: Math.round(((c._count?.products || 0) / maxCount) * 100) })));
+      if (overviewRes.status === "fulfilled") {
+        const data = overviewRes.value.overview;
+        setOverview(data);
+        setDashError("");
+        const categories = data.topCategories || [];
+        const maxCount = Math.max(1, ...categories.map((category) => category.products || 0));
+        setCategoryHealth(categories.map((category) => ({ ...category, percent: Math.round((category.products / maxCount) * 100) })));
+      } else {
+        setOverview(null);
+        setDashError(extractErrorMessage(overviewRes.reason));
       }
-    }).finally(() => alive && setDashLoading(false));
-    return () => { alive = false; };
+      if (ordersRes.status === "fulfilled") setRecentOrders(ordersRes.value.data || []);
+      if (initial) setDashLoading(false);
+    };
+    refresh(true);
+    const timer = setInterval(() => refresh(false), 30_000);
+    return () => { alive = false; clearInterval(timer); };
   }, [path]);
 
   // ---------------------------------------------------------------------------
@@ -283,32 +292,40 @@ export default function AdminDashboard() {const [createOpen,setCreateOpen]=useSt
       <div className="metric-grid">
         <Metric
           label="Gross sales today"
-          value={overview ? money(overview.gmvToday) : dashLoading ? "..." : money(0)}
+          value={overview ? money(overview.gmvToday) : dashLoading ? "..." : "Unavailable"}
           change="Paid orders today"
           icon="chart"
         />
 
         <Metric
           label="Orders today"
-          value={overview ? overview.ordersToday : dashLoading ? "..." : 0}
+          value={overview ? overview.ordersToday : dashLoading ? "..." : "Unavailable"}
           change="Placed in the last 24h"
           icon="cart"
         />
 
         <Metric
           label="Users"
-          value={overview ? overview.totalUsers : dashLoading ? "..." : 0}
+          value={overview ? overview.totalUsers : dashLoading ? "..." : "Unavailable"}
           change="Total registered accounts"
           icon="users"
         />
 
         <Metric
           label="Vendors"
-          value={overview ? overview.totalVendors : dashLoading ? "..." : 0}
-          change="Active marketplace vendors"
+          value={overview ? overview.totalVendors : dashLoading ? "..." : "Unavailable"}
+          change="Marketplace vendor accounts"
           icon="shop"
         />
       </div>
+
+      <div className="metric-grid">
+        <Metric label="Suppliers" value={overview ? overview.totalSuppliers : dashLoading ? "..." : "Unavailable"} change="Supplier accounts" icon="shop" />
+        <Metric label="Affiliates" value={overview ? overview.totalAffiliates : dashLoading ? "..." : "Unavailable"} change="Affiliate accounts" icon="users" />
+        <Metric label="Buyers" value={overview ? overview.totalBuyers : dashLoading ? "..." : "Unavailable"} change="Buyer accounts" icon="users" />
+        <Metric label="Total products" value={overview ? overview.totalProducts : dashLoading ? "..." : "Unavailable"} change="All catalog statuses" icon="box" />
+      </div>
+      {!overview && !dashLoading && <div className="form-error">Marketplace overview is unavailable: {dashError || "No data was returned."}</div>}
 
       {/* MVEC REVENUE + PLATFORM ACTIVITY */}
       <div className="dash-grid">
@@ -321,8 +338,8 @@ export default function AdminDashboard() {const [createOpen,setCreateOpen]=useSt
           </div>
 
           <div className="metric-grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
-            <Metric label="Commission earned" value={overview ? money(overview.mvecRevenueToday) : "..."} change="Today" icon="wallet" />
-            <Metric label="Products listed" value={overview ? overview.totalProducts : "..."} change="Across all vendors" icon="box" />
+            <Metric label="Commission earned" value={overview ? money(overview.mvecRevenueToday) : dashLoading ? "..." : "Unavailable"} change="Today" icon="wallet" />
+            <Metric label="Orders total" value={overview ? overview.totalOrders : dashLoading ? "..." : "Unavailable"} change="All marketplace orders" icon="cart" />
           </div>
         </div>
 
@@ -368,7 +385,7 @@ export default function AdminDashboard() {const [createOpen,setCreateOpen]=useSt
           <div className="activity-row" key={order.id}>
             <div>
               <b><Link to={`/orders/${order.id}`}>{order.orderNumber}</Link></b>
-              <small>{order.user?.fullName || "Unknown buyer"}</small>
+              <small>{order.user?.fullName || order.user?.Fullname || "Unknown buyer"}</small>
             </div>
             <div>
               <strong>{money(order.totalAmount)}</strong>

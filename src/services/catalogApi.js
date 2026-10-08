@@ -18,7 +18,10 @@ export function mapBackendProduct(p) {
   const rawPrice = Number(p.price || 0);
   const discountPrice = Number(p.discountPrice || 0);
   const activePrice = discountPrice > 0 && discountPrice < rawPrice ? discountPrice : rawPrice;
-  const mainImage = p.mainImage || (Array.isArray(p.gallery) ? p.gallery[0] : null) || PLACEHOLDER_IMG;
+  const media = p.media || {};
+  const productAttributes = p.attributes || {};
+  const gallery = Array.isArray(media.gallery) ? media.gallery : Array.isArray(p.gallery) ? p.gallery : [];
+  const mainImage = media.mainImage || p.mainImage || gallery[0] || PLACEHOLDER_IMG;
   return {
     id: p.id || p.publicId,
     name: p.name || '',
@@ -33,17 +36,17 @@ export function mapBackendProduct(p) {
     stock: Number(p.stockQuantity || 0),
     sku: p.sku || '',
     image: mainImage,
-    gallery: Array.isArray(p.gallery) ? p.gallery : [],
+    gallery,
     description: p.description || p.shortDescription || '',
     status: p.status || 'ACTIVE',
     slug: p.slug || '',
     attributes: {
-      Color: p.color || '',
-      Size: p.size || '',
-      Material: p.material || '',
-      Weight: p.weight || '',
-      Capacity: p.capacity || '',
-      Model: p.model || '',
+      Color: productAttributes.color || p.color || '',
+      Size: productAttributes.size || p.size || '',
+      Material: productAttributes.material || p.material || '',
+      Weight: productAttributes.weight || p.weight || '',
+      Capacity: productAttributes.capacity || p.capacity || '',
+      Model: productAttributes.model || p.model || '',
     },
   };
 }

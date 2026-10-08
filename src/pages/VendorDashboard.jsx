@@ -12,6 +12,7 @@ import { uploadsApi } from '../API/uploads';
 import { ordersApi } from '../API/orders';
 import { payoutsApi } from '../API/payouts';
 import { extractErrorMessage } from '../API/client';
+import { clearCatalogCache } from '../services/catalogApi';
 
 const money = n => new Intl.NumberFormat('en-RW').format(Number(n) || 0) + ' RWF';
 const readJSON = (key, fallback) => { try { const v = JSON.parse(localStorage.getItem(key)); return v ?? fallback; } catch { return fallback; } };
@@ -78,14 +79,22 @@ function SellerOverview(){
 }
 
 const emptyProduct={name:'',sku:'',categoryId:'',brand:'',shortDescription:'',description:'',price:'',discountPrice:'',costPrice:'',stockQuantity:'',lowStockThreshold:5,status:'DRAFT',mainImage:'',gallery:[],color:'',size:'',material:'',weight:'',capacity:'',model:''};
+const withCategoryId = category => ({ ...category, id: category.id || category._id || '' });
 
 function ProductForm({product,onSave,onCancel,saving}){
   const [form,setForm]=useState(()=>{
     if(!product) return {...emptyProduct};
     return {
       ...emptyProduct,...product,
-      categoryId: product.category?.id || product.categoryId || '',
-      gallery: Array.isArray(product.gallery)?product.gallery:[],
+      categoryId: product.category?.id || product.category?._id || product.categoryId || '',
+      mainImage: product.media?.mainImage || product.mainImage || '',
+      gallery: Array.isArray(product.media?.gallery) ? product.media.gallery : Array.isArray(product.gallery) ? product.gallery : [],
+      color: product.attributes?.color ?? product.color ?? '',
+      size: product.attributes?.size ?? product.size ?? '',
+      material: product.attributes?.material ?? product.material ?? '',
+      weight: product.attributes?.weight ?? product.weight ?? '',
+      capacity: product.attributes?.capacity ?? product.capacity ?? '',
+      model: product.attributes?.model ?? product.model ?? '',
     };
   });
   const [categories,setCategories]=useState([]);
@@ -93,7 +102,7 @@ function ProductForm({product,onSave,onCancel,saving}){
   const [error,setError]=useState('');
   const [notice,setNotice]=useState('');
 
-  useEffect(()=>{ categoriesApi.getAll().then(res=>setCategories(res.categories||[])).catch(()=>{}); },[]);
+  useEffect(()=>{ categoriesApi.getAll().then(res=>setCategories((res.categories||[]).map(withCategoryId))).catch(()=>{}); },[]);
 
   const update=e=>setForm(f=>({...f,[e.target.name]:e.target.value}));
   const addCategory=async()=>{
@@ -102,13 +111,15 @@ function ProductForm({product,onSave,onCancel,saving}){
     setNotice('');
     try{
       const res=await categoriesApi.create({name});
+      const category=withCategoryId(res.category);
+      if(!category.id) throw new Error('The category response did not include its ID. Refresh categories and try again.');
       if(res.alreadyExisted){
         setNotice(res.message);
-        setCategories(c=>c.some(x=>x.id===res.category.id)?c:[...c,res.category]);
+        setCategories(c=>c.some(x=>x.id===category.id)?c:[...c,category]);
       }else{
-        setCategories(c=>[...c,res.category]);
+        setCategories(c=>[...c,category]);
       }
-      setForm(f=>({...f,categoryId:res.category.id}));
+      setForm(f=>({...f,categoryId:category.id}));
       setNewCategory('');
     }catch(err){ setError(extractErrorMessage(err)); }
   };
@@ -154,7 +165,7 @@ function ProductForm({product,onSave,onCancel,saving}){
     <form onSubmit={submit} className="product-form">
       <section className="editor-section"><h3>Basic information</h3>
         <div className="two-col"><label className="field"><span>Product name *</span><input name="name" value={form.name} onChange={update} required placeholder="e.g. Samsung Galaxy S25"/></label><label className="field"><span>SKU</span><input name="sku" value={form.sku||''} onChange={update} placeholder="Auto-generated if left blank"/></label></div>
-        <div className="two-col"><label className="field"><span>Category *</span><select name="categoryId" value={form.categoryId} onChange={update} required><option value="">Select category</option>{categories.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label><label className="field"><span>Brand</span><input name="brand" value={form.brand||''} onChange={update} placeholder="Brand name"/></label></div>
+        <div className="two-col"><label className="field"><span>Category *</span><select name="categoryId" value={form.categoryId} onChange={update} required><option value="">Select category</option>{categories.filter(c=>c.id).map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label><label className="field"><span>Brand</span><input name="brand" value={form.brand||''} onChange={update} placeholder="Brand name"/></label></div>
         <div className="inline-add-category"><input value={newCategory} onChange={e=>setNewCategory(e.target.value)} placeholder="New category name"/><button type="button" className="outline-btn" onClick={addCategory}>+ Add category</button></div>
         <label className="field"><span>Short description</span><input name="shortDescription" value={form.shortDescription||''} onChange={update} maxLength="180" placeholder="A short summary shown on product cards"/></label>
         <label className="field"><span>Description *</span><textarea name="description" value={form.description||''} onChange={update} rows="5" required placeholder="Describe the product, benefits and important information"/></label>
@@ -225,6 +236,7 @@ function ProductModule(){
     try{
       if(editing?.mode==='create') await productsApi.create(payload);
       else await productsApi.update(editing.product.id,payload);
+      clearCatalogCache(); // bust marketplace cache so the product appears in /shop immediately
       setEditing(null);
       load();
       navigate('/vendor/products',{replace:true});
@@ -261,7 +273,7 @@ function ProductModule(){
       {!loading && shown.length===0 && <div className="empty-state"><h3>No products yet</h3><p>Add your first product to start selling.</p></div>}
       {!loading && <div className="product-admin-list">
         {shown.map(p=><div className="product-admin-row" key={p.id}>
-          <div className="admin-product-main">{p.mainImage?<img src={p.mainImage} alt=""/>:<div className="product-placeholder"><Icon name="box"/></div>}<div><b>{p.name}</b><small>{p.sku} · {p.brand||'No brand'} · {p.category?.name||''}</small></div></div>
+          <div className="admin-product-main">{(p.media?.mainImage||p.mainImage)?<img src={p.media?.mainImage||p.mainImage} alt=""/>:<div className="product-placeholder"><Icon name="box"/></div>}<div><b>{p.name}</b><small>{p.sku} · {p.brand||'No brand'} · {p.category?.name||''}</small></div></div>
           <div><b>{money(p.price)}</b><small>Stock: {p.stockQuantity}</small></div>
           <em className={'status '+(p.status==='ACTIVE'?'active':'warning')}>{p.status}</em>
           <div className="row-actions"><button type="button" title="Edit product" onClick={()=>setEditing({mode:'edit',product:p})}><Icon name="edit"/></button><button type="button" title={p.status==='INACTIVE'?'Restore product':'Archive product'} onClick={()=>toggleArchive(p)}><Icon name={p.status==='INACTIVE'?'check':'box'}/></button><button type="button" title="Delete product" onClick={()=>removeProduct(p)}><Icon name="trash"/></button></div>
