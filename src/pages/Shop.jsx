@@ -4,6 +4,7 @@ import Storefront from '../components/Storefront';
 import { loadCatalog } from '../services/catalogApi';
 import Icon from '../components/Icon';
 import Pagination from '../components/Pagination';
+import ProductImage from '../components/ProductImage';
 
 const money = n => new Intl.NumberFormat('en-RW').format(Number(n) || 0) + ' RWF';
 
@@ -66,7 +67,7 @@ export default function Shop() {
             {filtered.slice((page - 1) * 8, page * 8).map(p => (
               <div className="product-card" key={String(p.id)}>
                 <Link to={`/product/${p.id}`} className="product-img">
-                  <img src={p.image} alt={p.name} />
+                  <ProductImage src={p.image} alt={p.name} />
                   {p.oldPrice ? <span className="sale-badge">SALE</span> : null}
                 </Link>
                 <div className="product-info">

@@ -9,6 +9,7 @@ import { affiliatesApi } from "../API/affiliates";
 import { productsApi } from "../API/products";
 import { mapBackendProduct } from "../services/catalogApi";
 import { extractErrorMessage } from "../API/client";
+import ProductImage from "../components/ProductImage";
 
 const money = n => new Intl.NumberFormat("en-RW").format(Number(n) || 0) + " RWF";
 const affiliateUrl = code => `${window.location.origin}/shop?ref=${code}`;
@@ -130,7 +131,7 @@ function Products() {
           const hasLink = linkFor(p.id);
           return (
             <div className="data-card" key={p.id}>
-              <div className="admin-product-main"><img src={p.image} alt="" /><div><b>{p.name}</b><small>{money(p.price)} · {p.vendor}</small></div></div>
+              <div className="admin-product-main"><ProductImage src={p.image} alt="" /><div><b>{p.name}</b><small>{money(p.price)} · {p.vendor}</small></div></div>
               <div className="affiliate-product-meta"><span>Available stock <b>{p.stock} units</b></span></div>
               <div className="affiliate-link-actions">
                 {hasLink ? <button className="red-outline-btn" onClick={() => terminateLink(p)} disabled={terminating === p.id}>{terminating === p.id ? "Terminating…" : "Terminate the link"}</button> : <button className="gradient-btn" onClick={() => makeLink(p)} disabled={creating === p.id}>{creating === p.id ? "Creating…" : "Create affiliate link"}</button>}
