@@ -10,6 +10,7 @@ const money = n => new Intl.NumberFormat('en-RW').format(Number(n) || 0) + ' RWF
 
 export default function Shop() {
   const [params] = useSearchParams();
+  const ref = params.get('ref');
   const [page, setPage] = useState(1);
   const [q, setQ] = useState('');
   const [cat, setCat] = useState(params.get('category') || '');
@@ -18,6 +19,8 @@ export default function Shop() {
   const [catalog, setCatalog] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  const productLink = (id) => ref ? `/product/${id}?ref=${ref}` : `/product/${id}`;
 
   useEffect(() => {
     let mounted = true;
@@ -66,13 +69,13 @@ export default function Shop() {
           <div className="product-grid">
             {filtered.slice((page - 1) * 8, page * 8).map(p => (
               <div className="product-card" key={String(p.id)}>
-                <Link to={`/product/${p.id}`} className="product-img">
+                <Link to={productLink(p.id)} className="product-img">
                   <ProductImage src={p.image} alt={p.name} />
                   {p.oldPrice ? <span className="sale-badge">SALE</span> : null}
                 </Link>
                 <div className="product-info">
                   <small>{p.vendor}</small>
-                  <Link to={`/product/${p.id}`} className="product-name">{p.name}</Link>
+                  <Link to={productLink(p.id)} className="product-name">{p.name}</Link>
                   <div className="rating">★ {p.rating} <span>({p.reviews})</span></div>
                   <b>{money(p.price)}</b> {p.oldPrice ? <del>{money(p.oldPrice)}</del> : null}
                 </div>
