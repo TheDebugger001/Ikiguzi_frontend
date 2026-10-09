@@ -74,7 +74,7 @@ function VendorCategories(){
 
 function WholesaleList({role}){
  const [rows,setRows]=useState([]);const [loading,setLoading]=useState(true);const [error,setError]=useState('');
- useEffect(()=>{wholesaleApi.getMine().then(res=>setRows(res.data||[])).catch(err=>setError(extractErrorMessage(err))).finally(()=>setLoading(false));},[]);
+ useEffect(()=>{wholesaleApi.getMine().then(res=>setRows(res.orders||res.data||[])).catch(err=>setError(extractErrorMessage(err))).finally(()=>setLoading(false));},[]);
  const columns=role==='supplier'
   ?[{key:'orderNumber',label:'Order'},{key:'vendor',label:'Vendor',render:r=>r.vendor?.companyName||r.vendor?.fullName||'Vendor'},{key:'totalAmount',label:'Total',render:r=>money(r.totalAmount)},{key:'status',label:'Status',render:r=><em className={'status '+(r.status==='CONFIRMED_RELEASED'?'active':'warning')}>{r.status}</em>}]
   :[{key:'orderNumber',label:'Order'},{key:'supplier',label:'Supplier',render:r=>r.supplier?.companyName||r.supplier?.fullName||'Supplier'},{key:'totalAmount',label:'Total',render:r=>money(r.totalAmount)},{key:'status',label:'Status',render:r=><em className={'status '+(r.status==='CONFIRMED_RELEASED'?'active':'warning')}>{r.status}</em>}];
@@ -87,7 +87,7 @@ function WholesaleList({role}){
 
 function SupplierLiveModule({type}){
  const [rows,setRows]=useState([]);const [loading,setLoading]=useState(true);const [error,setError]=useState('');
- useEffect(()=>{const request=type==='transactions'?suppliersApi.getFinanceLedger({limit:100}):type==='reviews'?suppliersApi.getReviews({limit:100}):suppliersApi.getSupplyRequests({limit:100});request.then(res=>setRows(type==='transactions'?(res.entries||[]):type==='reviews'?(res.reviews||[]):(res.requests||[]))).catch(err=>setError(extractErrorMessage(err))).finally(()=>setLoading(false));},[type]);
+ useEffect(()=>{const request=type==='transactions'?suppliersApi.getFinanceLedger({limit:100}):type==='reviews'?suppliersApi.getReviews({limit:100}):suppliersApi.getSupplyRequests({limit:100});request.then(res=>{const list=type==='transactions'?(res.entries||[]):type==='reviews'?(res.reviews||[]):(res.requests||res.data||[]);setRows(list);}).catch(err=>setError(extractErrorMessage(err))).finally(()=>setLoading(false));},[type]);
  const columns=type==='transactions'?[{key:'description',label:'Description'},{key:'kind',label:'Type'},{key:'amount',label:'Amount',render:r=>money(r.amount)},{key:'at',label:'Date',render:r=>dateDMY(r.at)}]:type==='reviews'?[{key:'author',label:'Vendor'},{key:'orderNumber',label:'Order'},{key:'rating',label:'Rating',render:r=>`★ ${r.rating}`},{key:'comment',label:'Comment'},{key:'createdAt',label:'Date',render:r=>dateDMY(r.createdAt)}]:[{key:'reference',label:'Request'},{key:'status',label:'Status'},{key:'neededBy',label:'Needed by',render:r=>dateDMY(r.neededBy)},{key:'note',label:'Note'}];
  return <><Header eyebrow={`SUPPLIER · ${type.replace('-', ' ').toUpperCase()}`} title={type==='transactions'?'Transactions':type==='reviews'?'Reviews':'Supply requests'} desc="Live records from the supplier database."/>{error&&<div className="form-error">{error}</div>}<div className="data-card">{loading?<div className="empty-state"><h3>Loading live records…</h3></div>:<SmartTable columns={columns} rows={rows} rowKey={r=>r._id||r.id||r.reference} searchPlaceholder={`Search ${type.replace('-', ' ')}…`} empty="No records in the database."/>}</div></>;
 }

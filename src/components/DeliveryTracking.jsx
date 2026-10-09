@@ -20,7 +20,7 @@ export default function DeliveryTracking({ role = "vendor" }) {
 
   const load = () => {
     ordersApi.getDeliverable()
-      .then((res) => setOrders(res.orders || []))
+      .then((res) => setOrders(res.orders || res.data || []))
       .catch((err) => setError(extractErrorMessage(err)))
       .finally(() => setLoading(false));
   };

@@ -110,8 +110,8 @@ export default function Home() {
             <div className="visual-glow" />
             {heroProducts.map((p, i) => (
               <Link
-                key={p.id}
-                to={`/product/${p.id}`}
+                key={p.id || p._id || i}
+                to={`/product/${p.id || p._id}`}
                 className={`hero-product-card hero-product-${i}`}
               >
                 <img src={p.image} alt={p.name} />
@@ -125,7 +125,7 @@ export default function Home() {
           <section className="moving-products">
             <div className="moving-track">
               {[...products, ...products].map((p, i) => (
-                <Link to={`/product/${p.id}`} key={i} className="moving-product">
+                <Link to={`/product/${p.id || p._id}`} key={`${p.id || p._id}-${i}`} className="moving-product">
                   <img src={p.image} alt="" />
                   <span>{p.name}</span>
                   <b>{money(p.price)}</b>
@@ -171,7 +171,7 @@ export default function Home() {
           </div>
           <div className="product-grid">
             {shownProducts.map((p) => (
-              <ProductCard key={p.id} p={p} />
+              <ProductCard key={p.id || p._id} p={p} />
             ))}
           </div>
           <Pagination
@@ -242,7 +242,7 @@ export default function Home() {
           </div>
           <div className="vendor-grid">
             {shownVendors.map((v) => (
-              <Link to={`/vendors/${v.id}`} className="vendor-card" key={v.id}>
+              <Link to={`/vendors/${v.id}`} className="vendor-card" key={v.id || v._id}>
                 <div className="vendor-avatar">{v.name.charAt(0)}</div>
                 <div>
                   <b>{v.name}</b>

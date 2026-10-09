@@ -84,7 +84,7 @@ function Products() {
     setCreating(p.id);
     try {
       const res = await affiliatesApi.generateLink({ productId: p.id });
-      setLinks(prev => [res.data, ...prev]);
+      setLinks(prev => [res.link || res.data, ...prev]);
     } catch (err) {
       setError(extractErrorMessage(err));
     } finally {
@@ -96,7 +96,7 @@ function Products() {
     let link = linkFor(p.id);
     if (!link) {
       const res = await affiliatesApi.generateLink({ productId: p.id }).catch(() => null);
-      if (res) { link = res.data; setLinks(prev => [res.data, ...prev]); }
+      if (res) { link = res.link || res.data; setLinks(prev => [res.link || res.data, ...prev]); }
     }
     if (!link) return;
     await copyText(affiliateUrl(link.affiliateCode));
@@ -151,7 +151,7 @@ function Links() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    affiliatesApi.getMyLinks().then(res => setLinks(res.data || [])).finally(() => setLoading(false));
+    affiliatesApi.getMyLinks().then(res => setLinks(res.links || res.data || [])).finally(() => setLoading(false));
   }, []);
 
   const rows = links.map(l => ({
@@ -188,7 +188,7 @@ function Wallet() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    affiliatesApi.getMyWallet().then(res => setWallet(res.data)).finally(() => setLoading(false));
+    affiliatesApi.getMyWallet().then(res => setWallet(res.wallet || res.data || res)).finally(() => setLoading(false));
   }, []);
 
   return <>
